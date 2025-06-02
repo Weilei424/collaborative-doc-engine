@@ -13,9 +13,4 @@ import java.util.UUID;
 @Repository
 public interface DocumentRepository extends PagingAndSortingRepository<Document, UUID>, CrudRepository<Document, UUID> {
 
-    // This class can be extended with custom query methods if needed.
-    // For example, you can add methods to find documents by title, author, etc.
-
-    // Example:
-    // List<Document> findByTitle(String title);
 }
