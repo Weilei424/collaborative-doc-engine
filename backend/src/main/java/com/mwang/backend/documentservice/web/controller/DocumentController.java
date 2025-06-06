@@ -1,7 +1,7 @@
-package com.mwang.backend.web.controller;
+package com.mwang.backend.documentservice.web.controller;
 
-import com.mwang.backend.service.DocumentService;
-import com.mwang.backend.web.model.DocumentDto;
+import com.mwang.backend.documentservice.service.DocumentService;
+import com.mwang.backend.documentservice.web.model.DocumentDto;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;

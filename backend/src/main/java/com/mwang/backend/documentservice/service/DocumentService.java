@@ -1,6 +1,6 @@
-package com.mwang.backend.service;
+package com.mwang.backend.documentservice.service;
 
-import com.mwang.backend.web.model.DocumentDto;
+import com.mwang.backend.documentservice.web.model.DocumentDto;
 
 import java.util.List;
 import java.util.Optional;

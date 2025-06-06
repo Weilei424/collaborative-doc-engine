@@ -1,4 +1,4 @@
-package com.mwang.backend.web.mappers;
+package com.mwang.backend.documentservice.web.mappers;
 
 import org.springframework.stereotype.Component;
 

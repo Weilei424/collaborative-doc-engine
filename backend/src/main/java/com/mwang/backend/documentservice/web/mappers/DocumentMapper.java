@@ -1,7 +1,7 @@
-package com.mwang.backend.web.mappers;
+package com.mwang.backend.documentservice.web.mappers;
 
-import com.mwang.backend.domain.Document;
-import com.mwang.backend.web.model.DocumentDto;
+import com.mwang.backend.documentservice.domain.Document;
+import com.mwang.backend.documentservice.web.model.DocumentDto;
 import org.mapstruct.Mapper;
 
 @Mapper(uses = DateMapper.class)

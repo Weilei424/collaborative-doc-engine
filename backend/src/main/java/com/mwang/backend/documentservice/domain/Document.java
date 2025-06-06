@@ -1,4 +1,4 @@
-package com.mwang.backend.domain;
+package com.mwang.backend.documentservice.domain;
 
 import jakarta.persistence.*;
 import lombok.*;

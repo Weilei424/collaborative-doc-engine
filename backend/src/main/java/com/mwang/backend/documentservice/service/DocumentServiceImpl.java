@@ -1,9 +1,9 @@
-package com.mwang.backend.service;
+package com.mwang.backend.documentservice.service;
 
-import com.mwang.backend.domain.Document;
-import com.mwang.backend.repository.DocumentRepository;
-import com.mwang.backend.web.mappers.DocumentMapper;
-import com.mwang.backend.web.model.DocumentDto;
+import com.mwang.backend.documentservice.domain.Document;
+import com.mwang.backend.documentservice.repository.DocumentRepository;
+import com.mwang.backend.documentservice.web.mappers.DocumentMapper;
+import com.mwang.backend.documentservice.web.model.DocumentDto;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 
