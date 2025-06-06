@@ -1,4 +1,4 @@
-package com.mwang.backend.documentservice.web.model;
+package com.mwang.backend.web.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
