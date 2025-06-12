@@ -1,5 +1,6 @@
 package com.mwang.backend.websocket;
 
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
@@ -23,5 +24,10 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
                 s.sendMessage(message);
             }
         }
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        sessions.remove(session);
     }
 }
