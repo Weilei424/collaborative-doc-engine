@@ -10,5 +10,8 @@ import java.util.Set;
 public class DocumentWebSocketHandler extends TextWebSocketHandler {
     private static final Set<WebSocketSession> sessions = Collections.synchronizedSet(new HashSet<>());
 
-
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) {
+        sessions.add(session);
+    }
 }
