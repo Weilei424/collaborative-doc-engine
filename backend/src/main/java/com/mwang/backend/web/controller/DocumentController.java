@@ -3,7 +3,6 @@ package com.mwang.backend.web.controller;
 import com.mwang.backend.service.DocumentService;
 import com.mwang.backend.web.model.DocumentDto;
 import lombok.AllArgsConstructor;
-import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -12,7 +11,7 @@ import java.util.UUID;
 
 @RequestMapping("/api/documents")
 @AllArgsConstructor
-@Controller
+@RestController
 public class DocumentController {
 
     private final DocumentService documentService;
