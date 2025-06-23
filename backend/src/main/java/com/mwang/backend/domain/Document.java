@@ -1,6 +1,7 @@
 package com.mwang.backend.domain;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 import org.hibernate.proxy.HibernateProxy;
 
@@ -14,14 +15,20 @@ import java.util.UUID;
 @Setter
 @ToString
 @Builder
-public class Document {
+@Table(name = "documents")
+public class Document extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(nullable = false)
     private UUID id;
 
+    @NotBlank(message = "Title cannot be blank")
+    @Column(nullable = false)
     private String title;
+
+    @NotBlank(message = "Content cannot be blank")
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
     @Override
