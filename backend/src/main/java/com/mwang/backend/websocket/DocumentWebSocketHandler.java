@@ -25,9 +25,9 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
     public void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
 
         CollaborationMessage msg = objectMapper.readValue(message.getPayload(), CollaborationMessage.class);
-        docSessions.computeIfAbsent(msg.getDocId(), k -> Collections.newSetFromMap(new ConcurrentHashMap<>())).add(session);
+        docSessions.computeIfAbsent(msg.getDocumentId(), k -> Collections.newSetFromMap(new ConcurrentHashMap<>())).add(session);
 
-        for (WebSocketSession s : docSessions.get(msg.getDocId())) {
+        for (WebSocketSession s : docSessions.get(msg.getDocumentId())) {
             if (s.isOpen() && s != session) {
                 s.sendMessage(message);
             }
