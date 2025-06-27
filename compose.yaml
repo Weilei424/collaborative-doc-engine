@@ -1,17 +1,16 @@
 version: '3.8'
 services:
-  mysql:
-    image: mysql:8.3
+  postgres:
+    image: postgres:15
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
-      MYSQL_DATABASE: collabdb
-      MYSQL_USER: collabuser
-      MYSQL_PASSWORD: collabpass
+      POSTGRES_DB: collabdb
+      POSTGRES_USER: collabuser
+      POSTGRES_PASSWORD: collabpass
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
 
 volumes:
-  mysql_data:
+  postgres_data:
