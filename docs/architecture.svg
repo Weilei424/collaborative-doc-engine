@@ -1,0 +1,44 @@
+<svg width="900" height="420" xmlns="http://www.w3.org/2000/svg">
+
+  <style>
+    .box { fill: #0f172a; stroke: #64748b; stroke-width: 2; rx: 12; }
+    .text { fill: #e2e8f0; font-family: Arial, sans-serif; font-size: 16px; text-anchor: middle; dominant-baseline: middle; }
+    .title { fill: #f8fafc; font-size: 18px; font-weight: bold; }
+    .arrow { stroke: #94a3b8; stroke-width: 2; marker-end: url(#arrowhead); }
+  </style>
+
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" 
+      refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
+    </marker>
+  </defs>
+
+  <!-- Clients -->
+  <rect x="325" y="30" width="250" height="60" class="box"/>
+  <text x="450" y="60" class="text title">Clients (Web / API)</text>
+
+  <!-- Spring Boot -->
+  <rect x="300" y="130" width="300" height="70" class="box"/>
+  <text x="450" y="165" class="text title">Spring Boot Application</text>
+
+  <!-- Databases -->
+  <rect x="80" y="280" width="220" height="70" class="box"/>
+  <text x="190" y="310" class="text title">PostgreSQL</text>
+  <text x="190" y="335" class="text">(Persistent Storage)</text>
+
+  <rect x="340" y="280" width="220" height="70" class="box"/>
+  <text x="450" y="310" class="text title">Redis</text>
+  <text x="450" y="335" class="text">(Real-time State)</text>
+
+  <rect x="600" y="280" width="220" height="70" class="box"/>
+  <text x="710" y="310" class="text title">Kafka</text>
+  <text x="710" y="335" class="text">(Event Log)</text>
+
+  <!-- Arrows -->
+  <line x1="450" y1="90" x2="450" y2="130" class="arrow"/>
+  <line x1="450" y1="200" x2="190" y2="280" class="arrow"/>
+  <line x1="450" y1="200" x2="450" y2="280" class="arrow"/>
+  <line x1="450" y1="200" x2="710" y2="280" class="arrow"/>
+
+</svg>
