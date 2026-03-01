@@ -28,17 +28,11 @@ It is designed to simulate production-level collaborative systems (e.g., Google 
 ---
 
 ## 🏗 Architecture
-            Clients (Web / API)
-                    │
-                    ▼
-        Spring Boot Application
-                    │
-    ┌───────────────┼────────────────┐
-    ▼               ▼                ▼
-    P
-    
-PostgreSQL Redis Kafka
-(Persistent) (Real-time) (Event Log)
+
+<p align="center">
+  <img src="docs/architecture.svg" width="800"/>
+</p>
+
 ---
 
 ## 🧠 Edit Flow (End-to-End)
@@ -112,41 +106,7 @@ Flyway is used alongside Spring Data JPA to:
 - Support CI/CD pipelines  
 - Prevent schema drift in distributed deployments  
 
-Migration scripts are stored under:
-src/main/resources/db/migration
 ---
 
-## 📡 Redis Pub/Sub Behavior
-
-For a document `doc-123`:
-
-- Channel name: `document:doc-123`
-- Instance A publishes edit
-- Instance B receives event
-- Instance B updates local state
-- All connected clients get the change
-
-All instances:
-
-- Can publish  
-- Can subscribe  
-- Remain eventually consistent  
-
-Redis handles real-time propagation.  
-Kafka ensures durability and replayability.
-
----
-
-## 📬 Kafka Usage
-
-Kafka is used for:
-
-- Event sourcing  
-- Audit logs  
-- Analytics pipelines  
-- Async processing (e.g., history snapshots)  
-
-**Redis = low latency**  
-**Kafka = durability & scalability**
 
 ---
