@@ -63,8 +63,10 @@ class DocumentRepositoryAccessTest {
         User owner = userRepository.saveAndFlush(newUser("owner-search"));
         User collaborator = userRepository.saveAndFlush(newUser("collaborator-search"));
 
+        Document ownedMatch = documentRepository.saveAndFlush(newDocument(owner, "Spec Owned", DocumentVisibility.PRIVATE));
+        documentRepository.saveAndFlush(newDocument(owner, "Roadmap Owned", DocumentVisibility.PRIVATE));
         Document sharedMatch = documentRepository.saveAndFlush(newDocument(owner, "Spec Notes", DocumentVisibility.SHARED));
-        Document sharedMiss = documentRepository.saveAndFlush(newDocument(owner, "Roadmap", DocumentVisibility.SHARED));
+        documentRepository.saveAndFlush(newDocument(owner, "Roadmap", DocumentVisibility.SHARED));
         Document publicMatch = documentRepository.saveAndFlush(newDocument(owner, "Spec Public", DocumentVisibility.PUBLIC));
 
         documentCollaboratorRepository.saveAndFlush(DocumentCollaborator.builder()
@@ -72,11 +74,11 @@ class DocumentRepositoryAccessTest {
                 .user(collaborator)
                 .permission(DocumentPermission.WRITE)
                 .build());
-        documentCollaboratorRepository.saveAndFlush(DocumentCollaborator.builder()
-                .document(sharedMiss)
-                .user(collaborator)
-                .permission(DocumentPermission.READ)
-                .build());
+
+        assertThat(documentRepository.findOwnedByUserId(owner.getId(), "spec", PageRequest.of(0, 20)).getContent())
+                .extracting(Document::getId)
+                .containsExactlyInAnyOrder(ownedMatch.getId(), sharedMatch.getId(), publicMatch.getId());
+
 
         assertThat(documentRepository.findSharedWithUserId(collaborator.getId(), "spec", PageRequest.of(0, 20)).getContent())
                 .extracting(Document::getId)
@@ -85,6 +87,10 @@ class DocumentRepositoryAccessTest {
         assertThat(documentRepository.findPublicDocuments("spec", PageRequest.of(0, 20)).getContent())
                 .extracting(Document::getId)
                 .containsExactly(publicMatch.getId());
+
+        assertThat(documentRepository.findAccessibleByUserId(collaborator.getId(), "spec", PageRequest.of(0, 20)).getContent())
+                .extracting(Document::getId)
+                .containsExactlyInAnyOrder(sharedMatch.getId(), publicMatch.getId());
     }
 
     private User newUser(String seed) {
@@ -104,3 +110,5 @@ class DocumentRepositoryAccessTest {
                 .build();
     }
 }
+
+
