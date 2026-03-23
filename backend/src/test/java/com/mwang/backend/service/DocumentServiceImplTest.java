@@ -114,6 +114,69 @@ class DocumentServiceImplTest {
     }
 
     @Test
+    void listReturnsSharedDocumentsWithinRequestedScope() {
+        User actor = newUser("shared-scope");
+        User owner = newUser("shared-owner");
+        Document shared = newDocument(owner, "Shared Doc", DocumentVisibility.SHARED);
+        DocumentResponse mapped = response(shared.getId(), owner.getId(), owner.getUsername(), "WRITE");
+        PageRequest pageable = PageRequest.of(0, 20);
+
+        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(documentRepository.findSharedWithUserId(actor.getId(), null, pageable))
+                .thenReturn(new PageImpl<>(List.of(shared), pageable, 1));
+        when(documentRepository.findAllDetailedByIdIn(List.of(shared.getId()))).thenReturn(List.of(shared));
+        when(documentAuthorizationService.resolveEffectivePermission(shared, actor)).thenReturn("WRITE");
+        when(documentMapper.toResponse(shared, "WRITE")).thenReturn(mapped);
+
+        DocumentPagedList result = service.list(DocumentListScope.SHARED, null, pageable);
+
+        assertThat(result.items()).containsExactly(mapped);
+        assertThat(result.items().get(0).currentUserPermission()).isEqualTo("WRITE");
+    }
+
+    @Test
+    void listReturnsPublicDocumentsWithinRequestedScope() {
+        User actor = newUser("public-scope");
+        User owner = newUser("public-owner");
+        Document publicDocument = newDocument(owner, "Public Doc", DocumentVisibility.PUBLIC);
+        DocumentResponse mapped = response(publicDocument.getId(), owner.getId(), owner.getUsername(), "READ");
+        PageRequest pageable = PageRequest.of(0, 20);
+
+        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(documentRepository.findPublicDocuments("pub", pageable))
+                .thenReturn(new PageImpl<>(List.of(publicDocument), pageable, 1));
+        when(documentRepository.findAllDetailedByIdIn(List.of(publicDocument.getId()))).thenReturn(List.of(publicDocument));
+        when(documentAuthorizationService.resolveEffectivePermission(publicDocument, actor)).thenReturn("READ");
+        when(documentMapper.toResponse(publicDocument, "READ")).thenReturn(mapped);
+
+        DocumentPagedList result = service.list(DocumentListScope.PUBLIC, "pub", pageable);
+
+        assertThat(result.items()).containsExactly(mapped);
+        assertThat(result.items().get(0).currentUserPermission()).isEqualTo("READ");
+    }
+
+    @Test
+    void listReturnsAccessibleDocumentsAcrossScopes() {
+        User actor = newUser("accessible-scope");
+        User owner = newUser("accessible-owner");
+        Document accessible = newDocument(owner, "Accessible Doc", DocumentVisibility.PUBLIC);
+        DocumentResponse mapped = response(accessible.getId(), owner.getId(), owner.getUsername(), "READ");
+        PageRequest pageable = PageRequest.of(0, 20);
+
+        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(documentRepository.findAccessibleByUserId(actor.getId(), null, pageable))
+                .thenReturn(new PageImpl<>(List.of(accessible), pageable, 1));
+        when(documentRepository.findAllDetailedByIdIn(List.of(accessible.getId()))).thenReturn(List.of(accessible));
+        when(documentAuthorizationService.resolveEffectivePermission(accessible, actor)).thenReturn("READ");
+        when(documentMapper.toResponse(accessible, "READ")).thenReturn(mapped);
+
+        DocumentPagedList result = service.list(DocumentListScope.ACCESSIBLE, null, pageable);
+
+        assertThat(result.items()).containsExactly(mapped);
+        assertThat(result.totalElements()).isEqualTo(1);
+    }
+
+    @Test
     void updateRequiresOwnerAndPersistsEditableFields() {
         User actor = newUser("owner-update");
         Document existing = newDocument(actor, "Before", DocumentVisibility.PRIVATE);
