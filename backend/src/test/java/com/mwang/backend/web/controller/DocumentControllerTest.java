@@ -5,7 +5,9 @@ import com.mwang.backend.domain.DocumentPermission;
 import com.mwang.backend.domain.DocumentVisibility;
 import com.mwang.backend.service.DocumentService;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
+import com.mwang.backend.service.exception.DocumentNotFoundException;
 import com.mwang.backend.service.exception.UserContextRequiredException;
+import com.mwang.backend.service.exception.UserNotFoundException;
 import com.mwang.backend.web.model.CreateDocumentRequest;
 import com.mwang.backend.web.model.DocumentCollaboratorSummary;
 import com.mwang.backend.web.model.DocumentOwnerSummary;
@@ -93,6 +95,42 @@ class DocumentControllerTest {
     }
 
     @Test
+    void listAcceptsOwnedScope() throws Exception {
+        Mockito.when(documentService.list(eq(DocumentListScope.OWNED), eq(null), any(Pageable.class)))
+                .thenReturn(new DocumentPagedList(List.of(), 0, 20, 0L, 0));
+
+        mockMvc.perform(get("/api/documents")
+                        .header("X-User-Id", UUID.randomUUID())
+                        .param("scope", "owned"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isArray());
+    }
+
+    @Test
+    void listAcceptsSharedScope() throws Exception {
+        Mockito.when(documentService.list(eq(DocumentListScope.SHARED), eq(null), any(Pageable.class)))
+                .thenReturn(new DocumentPagedList(List.of(), 0, 20, 0L, 0));
+
+        mockMvc.perform(get("/api/documents")
+                        .header("X-User-Id", UUID.randomUUID())
+                        .param("scope", "shared"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isArray());
+    }
+
+    @Test
+    void listAcceptsPublicScope() throws Exception {
+        Mockito.when(documentService.list(eq(DocumentListScope.PUBLIC), eq(null), any(Pageable.class)))
+                .thenReturn(new DocumentPagedList(List.of(), 0, 20, 0L, 0));
+
+        mockMvc.perform(get("/api/documents")
+                        .header("X-User-Id", UUID.randomUUID())
+                        .param("scope", "public"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isArray());
+    }
+
+    @Test
     void getByIdReturnsRichResponseForAllowedActor() throws Exception {
         UUID actorId = UUID.randomUUID();
         DocumentResponse response = sampleResponse(actorId, "owner-user", DocumentPermission.ADMIN);
@@ -129,6 +167,62 @@ class DocumentControllerTest {
     }
 
     @Test
+    void invalidPageReturnsStableValidationEnvelope() throws Exception {
+        mockMvc.perform(get("/api/documents")
+                        .header("X-User-Id", UUID.randomUUID())
+                        .param("page", "-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void nonNumericPageReturnsStableValidationEnvelope() throws Exception {
+        mockMvc.perform(get("/api/documents")
+                        .header("X-User-Id", UUID.randomUUID())
+                        .param("page", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void invalidDocumentIdReturnsStableValidationEnvelope() throws Exception {
+        mockMvc.perform(get("/api/documents/{id}", "not-a-uuid")
+                        .header("X-User-Id", UUID.randomUUID()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void invalidVisibilityReturnsStableValidationEnvelope() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mockMvc.perform(put("/api/documents/{id}", id)
+                        .header("X-User-Id", UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"title\":\"Doc\",\"content\":\"Updated\",\"visibility\":\"BROKEN\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void invalidSortDirectionReturnsStableValidationEnvelope() throws Exception {
+        mockMvc.perform(get("/api/documents")
+                        .header("X-User-Id", UUID.randomUUID())
+                        .param("sort", "updatedAt,sideways"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void blankSortPropertyReturnsStableValidationEnvelope() throws Exception {
+        mockMvc.perform(get("/api/documents")
+                        .header("X-User-Id", UUID.randomUUID())
+                        .param("sort", " "))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void updateReturnsValidationErrorForBlankTitle() throws Exception {
         UUID id = UUID.randomUUID();
 
@@ -149,6 +243,62 @@ class DocumentControllerTest {
                 .thenThrow(new DocumentAccessDeniedException(documentId, actorId));
 
         mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("X-User-Id", actorId))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_ACCESS_DENIED"));
+    }
+
+    @Test
+    void missingDocumentReturns404() throws Exception {
+        UUID documentId = UUID.randomUUID();
+
+        Mockito.when(documentService.getById(documentId))
+                .thenThrow(new DocumentNotFoundException(documentId));
+
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("X-User-Id", UUID.randomUUID()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_NOT_FOUND"));
+    }
+
+    @Test
+    void unknownUserReturnsStableErrorEnvelope() throws Exception {
+        UUID userId = UUID.randomUUID();
+
+        Mockito.when(documentService.list(eq(DocumentListScope.ACCESSIBLE), eq(null), any(Pageable.class)))
+                .thenThrow(new UserNotFoundException(userId));
+
+        mockMvc.perform(get("/api/documents")
+                        .header("X-User-Id", userId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
+    }
+
+    @Test
+    void updateForbiddenReturns403() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        Mockito.when(documentService.update(eq(id), any(UpdateDocumentRequest.class)))
+                .thenThrow(new DocumentAccessDeniedException(id, actorId));
+
+        mockMvc.perform(put("/api/documents/{id}", id)
+                        .header("X-User-Id", actorId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateDocumentRequest("Doc", "Updated", DocumentVisibility.PRIVATE))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_ACCESS_DENIED"));
+    }
+
+    @Test
+    void deleteForbiddenReturns403() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        Mockito.doThrow(new DocumentAccessDeniedException(id, actorId))
+                .when(documentService).delete(id);
+
+        mockMvc.perform(delete("/api/documents/{id}", id)
                         .header("X-User-Id", actorId))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("DOCUMENT_ACCESS_DENIED"));
@@ -179,3 +329,7 @@ class DocumentControllerTest {
         );
     }
 }
+
+
+
+
