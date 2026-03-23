@@ -1,9 +1,14 @@
 package com.mwang.backend.web.model;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.Map;
 
+@Deprecated
 @Getter
 @Setter
 @NoArgsConstructor
