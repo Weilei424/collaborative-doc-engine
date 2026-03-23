@@ -1,26 +1,42 @@
 package com.mwang.backend.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mwang.backend.domain.DocumentPermission;
+import com.mwang.backend.domain.DocumentVisibility;
 import com.mwang.backend.service.DocumentService;
-import com.mwang.backend.web.model.DocumentDto;
+import com.mwang.backend.service.exception.DocumentAccessDeniedException;
+import com.mwang.backend.service.exception.UserContextRequiredException;
+import com.mwang.backend.web.model.CreateDocumentRequest;
+import com.mwang.backend.web.model.DocumentCollaboratorSummary;
+import com.mwang.backend.web.model.DocumentOwnerSummary;
+import com.mwang.backend.web.model.DocumentPagedList;
+import com.mwang.backend.web.model.DocumentResponse;
+import com.mwang.backend.web.model.UpdateDocumentRequest;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(DocumentController.class)
+@Import(RestExceptionHandler.class)
 class DocumentControllerTest {
 
     @Autowired
@@ -33,81 +49,133 @@ class DocumentControllerTest {
     private DocumentService documentService;
 
     @Test
-    void testCreate() throws Exception {
-        DocumentDto dto = new DocumentDto();
-        dto.setId(UUID.randomUUID());
-        dto.setTitle("Test Document");
-        dto.setContent("Test content");
+    void createReturns201AndRichDocumentResponse() throws Exception {
+        UUID ownerId = UUID.randomUUID();
+        DocumentResponse response = sampleResponse(ownerId, "owner-user", DocumentPermission.ADMIN);
 
-        Mockito.when(documentService.create(any(DocumentDto.class))).thenReturn(dto);
+        Mockito.when(documentService.create(any(CreateDocumentRequest.class))).thenReturn(response);
 
         mockMvc.perform(post("/api/documents")
+                        .header("X-User-Id", ownerId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(dto.getId().toString()))
-                .andExpect(jsonPath("$.title").value("Test Document"))
-                .andExpect(jsonPath("$.content").value("Test content"));
+                        .content(objectMapper.writeValueAsString(new CreateDocumentRequest("Doc", "Hello", DocumentVisibility.PRIVATE))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(response.id().toString()))
+                .andExpect(jsonPath("$.owner.id").value(ownerId.toString()))
+                .andExpect(jsonPath("$.owner.username").value("owner-user"))
+                .andExpect(jsonPath("$.visibility").value("PRIVATE"))
+                .andExpect(jsonPath("$.currentVersion").value(0))
+                .andExpect(jsonPath("$.currentUserPermission").value("OWNER"));
     }
 
     @Test
-    void testGetAll() throws Exception {
-        DocumentDto dto = new DocumentDto();
-        dto.setId(UUID.randomUUID());
-        dto.setTitle("Doc1");
-        dto.setContent("Content1");
+    void listReturnsUnifiedPagedResponse() throws Exception {
+        UUID actorId = UUID.randomUUID();
+        DocumentResponse response = sampleResponse(actorId, "owner-user", DocumentPermission.ADMIN);
+        DocumentPagedList pagedList = new DocumentPagedList(List.of(response), 0, 20, 1L, 1);
 
-        Mockito.when(documentService.getAll()).thenReturn(List.of(dto));
+        Mockito.when(documentService.list(eq(DocumentListScope.ACCESSIBLE), eq("doc"), any(Pageable.class)))
+                .thenReturn(pagedList);
 
-        mockMvc.perform(get("/api/documents"))
+        mockMvc.perform(get("/api/documents")
+                        .header("X-User-Id", actorId)
+                        .param("scope", "accessible")
+                        .param("query", "doc")
+                        .param("page", "0")
+                        .param("size", "20"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(dto.getId().toString()))
-                .andExpect(jsonPath("$[0].title").value("Doc1"))
-                .andExpect(jsonPath("$[0].content").value("Content1"));
+                .andExpect(jsonPath("$.items[0].id").value(response.id().toString()))
+                .andExpect(jsonPath("$.items[0].currentUserPermission").value("OWNER"))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(20))
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.totalPages").value(1));
     }
 
     @Test
-    void testGetById() throws Exception {
+    void getByIdReturnsRichResponseForAllowedActor() throws Exception {
+        UUID actorId = UUID.randomUUID();
+        DocumentResponse response = sampleResponse(actorId, "owner-user", DocumentPermission.ADMIN);
+
+        Mockito.when(documentService.getById(response.id())).thenReturn(response);
+
+        mockMvc.perform(get("/api/documents/{id}", response.id())
+                        .header("X-User-Id", actorId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.collaborators[0].permission").value("ADMIN"))
+                .andExpect(jsonPath("$.createdAt").value("2026-03-22T12:00:00Z"));
+    }
+
+    @Test
+    void missingActorHeaderReturnsStableErrorEnvelope() throws Exception {
+        Mockito.when(documentService.list(eq(DocumentListScope.OWNED), eq(null), any(Pageable.class)))
+                .thenThrow(new UserContextRequiredException());
+
+        mockMvc.perform(get("/api/documents")
+                        .param("scope", "owned"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("USER_CONTEXT_REQUIRED"))
+                .andExpect(jsonPath("$.message").exists())
+                .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    @Test
+    void invalidScopeReturnsStableErrorEnvelope() throws Exception {
+        mockMvc.perform(get("/api/documents")
+                        .header("X-User-Id", UUID.randomUUID())
+                        .param("scope", "bogus"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SCOPE"));
+    }
+
+    @Test
+    void updateReturnsValidationErrorForBlankTitle() throws Exception {
         UUID id = UUID.randomUUID();
-        DocumentDto dto = new DocumentDto();
-        dto.setId(id);
-        dto.setTitle("DocById");
-        dto.setContent("ContentById");
-
-        Mockito.when(documentService.getById(id)).thenReturn(Optional.of(dto));
-
-        mockMvc.perform(get("/api/documents/{id}", id))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(id.toString()))
-                .andExpect(jsonPath("$.title").value("DocById"))
-                .andExpect(jsonPath("$.content").value("ContentById"));
-    }
-
-    @Test
-    void testUpdate() throws Exception {
-        UUID id = UUID.randomUUID();
-        DocumentDto dto = new DocumentDto();
-        dto.setId(id);
-        dto.setTitle("Updated Title");
-        dto.setContent("Updated Content");
-
-        Mockito.when(documentService.update(eq(id), any(DocumentDto.class))).thenReturn(Optional.of(dto));
 
         mockMvc.perform(put("/api/documents/{id}", id)
+                        .header("X-User-Id", UUID.randomUUID())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(id.toString()))
-                .andExpect(jsonPath("$.title").value("Updated Title"))
-                .andExpect(jsonPath("$.content").value("Updated Content"));
+                        .content(objectMapper.writeValueAsString(new UpdateDocumentRequest(" ", "Updated", DocumentVisibility.SHARED))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
 
     @Test
-    void testDelete() throws Exception {
+    void disallowedReadReturns403() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        Mockito.when(documentService.getById(documentId))
+                .thenThrow(new DocumentAccessDeniedException(documentId, actorId));
+
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("X-User-Id", actorId))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_ACCESS_DENIED"));
+    }
+
+    @Test
+    void deleteReturns204() throws Exception {
         UUID id = UUID.randomUUID();
         Mockito.doNothing().when(documentService).delete(id);
 
-        mockMvc.perform(delete("/api/documents/{id}", id))
-                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/documents/{id}", id)
+                        .header("X-User-Id", UUID.randomUUID()))
+                .andExpect(status().isNoContent());
+    }
+
+    private DocumentResponse sampleResponse(UUID ownerId, String ownerUsername, DocumentPermission collaboratorPermission) {
+        return new DocumentResponse(
+                UUID.randomUUID(),
+                "Doc",
+                "Hello",
+                DocumentVisibility.PRIVATE,
+                0L,
+                Instant.parse("2026-03-22T12:00:00Z"),
+                Instant.parse("2026-03-22T12:30:00Z"),
+                new DocumentOwnerSummary(ownerId, ownerUsername),
+                List.of(new DocumentCollaboratorSummary(UUID.randomUUID(), "collab-user", collaboratorPermission)),
+                "OWNER"
+        );
     }
 }
