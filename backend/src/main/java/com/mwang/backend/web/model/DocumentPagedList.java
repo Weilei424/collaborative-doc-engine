@@ -1,4 +1,11 @@
 package com.mwang.backend.web.model;
 
-public class DocumentPagedList {
+import java.util.List;
+
+public record DocumentPagedList(
+        List<DocumentResponse> items,
+        int page,
+        int size,
+        long totalElements,
+        int totalPages) {
 }
