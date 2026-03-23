@@ -1,15 +1,18 @@
 package com.mwang.backend.service;
 
-import com.mwang.backend.web.model.DocumentDto;
+import com.mwang.backend.web.controller.DocumentListScope;
+import com.mwang.backend.web.model.CreateDocumentRequest;
+import com.mwang.backend.web.model.DocumentPagedList;
+import com.mwang.backend.web.model.DocumentResponse;
+import com.mwang.backend.web.model.UpdateDocumentRequest;
+import org.springframework.data.domain.Pageable;
 
-import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 public interface DocumentService {
-    DocumentDto create(DocumentDto documentDto);
-    List<DocumentDto> getAll();
-    Optional<DocumentDto> getById(UUID id);
-    Optional<DocumentDto> update(UUID id, DocumentDto documentDto);
+    DocumentResponse create(CreateDocumentRequest request);
+    DocumentPagedList list(DocumentListScope scope, String query, Pageable pageable);
+    DocumentResponse getById(UUID id);
+    DocumentResponse update(UUID id, UpdateDocumentRequest request);
     void delete(UUID id);
 }
