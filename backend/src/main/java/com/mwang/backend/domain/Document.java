@@ -49,6 +49,10 @@ public class Document extends BaseEntity {
     @Builder.Default
     private DocumentVisibility visibility = DocumentVisibility.PRIVATE;
 
+    @Column(name = "current_version", nullable = false)
+    @Builder.Default
+    private Long currentVersion = 0L;
+
     @Override
     public final boolean equals(Object o) {
         if (this == o) return true;
@@ -83,7 +87,7 @@ public class Document extends BaseEntity {
             return true;
         }
         return collaborators.stream()
-                .anyMatch(c -> c.getUser().equals(user) && 
+                .anyMatch(c -> c.getUser().equals(user) &&
                     c.getPermission().ordinal() >= permission.ordinal());
     }
 }
