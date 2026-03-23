@@ -1,6 +1,7 @@
 package com.mwang.backend.web.controller;
 
 import com.mwang.backend.service.DocumentService;
+import com.mwang.backend.service.exception.InvalidDocumentRequestException;
 import com.mwang.backend.web.model.CreateDocumentRequest;
 import com.mwang.backend.web.model.DocumentPagedList;
 import com.mwang.backend.web.model.DocumentResponse;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Set;
 import java.util.UUID;
 
 @Validated
@@ -32,6 +34,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @RestController
 public class DocumentController {
+
+    private static final Set<String> ALLOWED_SORT_PROPERTIES = Set.of("title", "createdAt", "updatedAt");
 
     private final DocumentService documentService;
 
@@ -68,13 +72,30 @@ public class DocumentController {
     }
 
     private Pageable buildPageable(int page, int size, String sort) {
-        if (sort == null || sort.isBlank()) {
+        if (sort == null) {
             return PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt"));
+        }
+
+        if (sort.isBlank()) {
+            throw new InvalidDocumentRequestException("Sort property must not be blank");
         }
 
         String[] segments = sort.split(",", 2);
         String property = segments[0].trim();
-        Sort.Direction direction = segments.length > 1 ? Sort.Direction.fromOptionalString(segments[1].trim()).orElse(Sort.Direction.ASC) : Sort.Direction.ASC;
+        if (property.isBlank()) {
+            throw new InvalidDocumentRequestException("Sort property must not be blank");
+        }
+        if (!ALLOWED_SORT_PROPERTIES.contains(property)) {
+            throw new InvalidDocumentRequestException("Unsupported sort property '%s'".formatted(property));
+        }
+
+        Sort.Direction direction = Sort.Direction.ASC;
+        if (segments.length > 1) {
+            String rawDirection = segments[1].trim();
+            direction = Sort.Direction.fromOptionalString(rawDirection)
+                    .orElseThrow(() -> new InvalidDocumentRequestException("Unsupported sort direction '%s'".formatted(rawDirection)));
+        }
+
         return PageRequest.of(page, size, Sort.by(direction, property));
     }
 }
