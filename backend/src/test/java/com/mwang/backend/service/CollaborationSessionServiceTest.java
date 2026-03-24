@@ -64,7 +64,7 @@ class CollaborationSessionServiceTest {
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of());
 
-        var snapshot = sessionService.join(documentId, null);
+        var snapshot = sessionService.join(documentId);
 
         verify(documentAuthorizationService).assertCanRead(document, actor);
         ArgumentCaptor<com.mwang.backend.web.model.CollaborationSessionResponse> captor = ArgumentCaptor.forClass(com.mwang.backend.web.model.CollaborationSessionResponse.class);
@@ -75,31 +75,6 @@ class CollaborationSessionServiceTest {
         assertThat(captor.getValue().username()).isEqualTo(actor.getUsername());
         assertThat(snapshot.documentId()).isEqualTo(documentId);
         assertThat(snapshot.sessions()).hasSize(1);
-    }
-
-    @Test
-    void joinGeneratesServerOwnedSessionIdWhenClientHintIsProvided() {
-        UUID documentId = UUID.randomUUID();
-        UUID clientSessionHint = UUID.randomUUID();
-        User actor = newUser("collab-user");
-        Document document = newDocument(documentId, actor);
-
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
-        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
-        doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
-        when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of());
-
-        var snapshot = sessionService.join(documentId, clientSessionHint);
-
-        ArgumentCaptor<com.mwang.backend.web.model.CollaborationSessionResponse> captor = ArgumentCaptor.forClass(com.mwang.backend.web.model.CollaborationSessionResponse.class);
-        verify(collaborationSessionStore).save(captor.capture());
-        assertThat(captor.getValue().sessionId()).isNotEqualTo(clientSessionHint);
-        assertThat(snapshot.sessions())
-                .singleElement()
-                .satisfies(session -> {
-                    assertThat(session.sessionId()).isEqualTo(captor.getValue().sessionId());
-                    assertThat(session.sessionId()).isNotEqualTo(clientSessionHint);
-                });
     }
 
     @Test
@@ -191,7 +166,7 @@ class CollaborationSessionServiceTest {
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of());
 
-        var joinSnapshot = sessionService.join(documentId, null, ownerSessionAttributes);
+        var joinSnapshot = sessionService.join(documentId,ownerSessionAttributes);
         var ownedSession = joinSnapshot.sessions().get(0);
 
         assertThatThrownBy(() -> sessionService.leave(documentId, ownedSession.sessionId(), otherConnectionAttributes))
@@ -212,7 +187,7 @@ class CollaborationSessionServiceTest {
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of(), List.of());
 
-        var joinSnapshot = sessionService.join(documentId, null, sessionAttributes);
+        var joinSnapshot = sessionService.join(documentId,sessionAttributes);
         UUID createdSessionId = joinSnapshot.sessions().get(0).sessionId();
         when(collaborationSessionStore.findBySessionId(documentId, createdSessionId)).thenReturn(Optional.of(joinSnapshot.sessions().get(0)));
 
@@ -244,7 +219,7 @@ class CollaborationSessionServiceTest {
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of(), List.of());
 
-        var joinSnapshot = sessionService.join(documentId, null, sessionAttributes);
+        var joinSnapshot = sessionService.join(documentId,sessionAttributes);
         UUID createdSessionId = joinSnapshot.sessions().get(0).sessionId();
         com.mwang.backend.web.model.CollaborationSessionResponse ownedSession = new com.mwang.backend.web.model.CollaborationSessionResponse(
                 createdSessionId,

@@ -6,7 +6,6 @@ import com.mwang.backend.service.CollaborationSessionService;
 import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
 import com.mwang.backend.web.model.CollaborationSessionResponse;
 import com.mwang.backend.web.model.CollaborationSessionSnapshot;
-import com.mwang.backend.web.model.JoinSessionRequest;
 import com.mwang.backend.web.model.LeaveSessionRequest;
 import com.mwang.backend.web.model.PresenceEventResponse;
 import com.mwang.backend.web.model.PresenceType;
@@ -47,30 +46,14 @@ class CollaborationControllerTest {
     @Test
     void joinSessionDelegatesToSessionServiceAndBroadcastsSessionSnapshot() {
         UUID documentId = UUID.randomUUID();
-        UUID clientSessionHint = UUID.randomUUID();
         CollaborationSessionSnapshot snapshot = snapshot(documentId);
         StompHeaderAccessor headerAccessor = accessor();
 
-        when(sessionService.join(documentId, clientSessionHint, headerAccessor.getSessionAttributes())).thenReturn(snapshot);
+        when(sessionService.join(documentId, headerAccessor.getSessionAttributes())).thenReturn(snapshot);
 
-        collaborationController.joinSession(documentId, new JoinSessionRequest(clientSessionHint), headerAccessor);
+        collaborationController.joinSession(documentId, headerAccessor);
 
-        verify(sessionService).join(documentId, clientSessionHint, headerAccessor.getSessionAttributes());
-        verify(broadcastService).broadcastSessionSnapshot(documentId, snapshot);
-        verifyNoMoreInteractions(broadcastService);
-    }
-
-    @Test
-    void joinSessionTreatsNullPayloadAsJoinWithoutClientHint() {
-        UUID documentId = UUID.randomUUID();
-        CollaborationSessionSnapshot snapshot = snapshot(documentId);
-        StompHeaderAccessor headerAccessor = accessor();
-
-        when(sessionService.join(documentId, null, headerAccessor.getSessionAttributes())).thenReturn(snapshot);
-
-        collaborationController.joinSession(documentId, null, headerAccessor);
-
-        verify(sessionService).join(documentId, null, headerAccessor.getSessionAttributes());
+        verify(sessionService).join(documentId, headerAccessor.getSessionAttributes());
         verify(broadcastService).broadcastSessionSnapshot(documentId, snapshot);
         verifyNoMoreInteractions(broadcastService);
     }
