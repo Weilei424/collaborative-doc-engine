@@ -7,9 +7,9 @@ import java.util.Map;
 import java.util.UUID;
 
 public interface CollaborationSessionService {
-    CollaborationSessionSnapshot join(UUID documentId, UUID clientSessionHint);
+    CollaborationSessionSnapshot join(UUID documentId);
 
-    CollaborationSessionSnapshot join(UUID documentId, UUID clientSessionHint, Map<String, Object> sessionAttributes);
+    CollaborationSessionSnapshot join(UUID documentId, Map<String, Object> sessionAttributes);
 
     CollaborationSessionSnapshot leave(UUID documentId, UUID sessionId);
 

@@ -45,12 +45,12 @@ public class CollaborationSessionServiceImpl implements CollaborationSessionServ
     }
 
     @Override
-    public CollaborationSessionSnapshot join(UUID documentId, UUID clientSessionHint) {
-        return join(documentId, clientSessionHint, null);
+    public CollaborationSessionSnapshot join(UUID documentId) {
+        return join(documentId, null);
     }
 
     @Override
-    public CollaborationSessionSnapshot join(UUID documentId, UUID clientSessionHint, Map<String, Object> sessionAttributes) {
+    public CollaborationSessionSnapshot join(UUID documentId, Map<String, Object> sessionAttributes) {
         User actor = currentUserProvider.requireCurrentUser(sessionAttributes);
         Document document = requireDocument(documentId);
         documentAuthorizationService.assertCanRead(document, actor);
