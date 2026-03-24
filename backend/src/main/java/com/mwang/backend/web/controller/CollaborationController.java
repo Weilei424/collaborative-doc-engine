@@ -4,7 +4,6 @@ import com.mwang.backend.service.CollaborationBroadcastService;
 import com.mwang.backend.service.CollaborationPresenceService;
 import com.mwang.backend.service.CollaborationSessionService;
 import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
-import com.mwang.backend.web.model.JoinSessionRequest;
 import com.mwang.backend.web.model.LeaveSessionRequest;
 import com.mwang.backend.web.model.PresenceUpdateRequest;
 import lombok.RequiredArgsConstructor;
@@ -28,11 +27,10 @@ public class CollaborationController {
     @MessageMapping("/documents/{documentId}/sessions.join")
     public void joinSession(
             @DestinationVariable UUID documentId,
-            @Payload(required = false) JoinSessionRequest request,
             SimpMessageHeaderAccessor headerAccessor) {
         collaborationBroadcastService.broadcastSessionSnapshot(
                 documentId,
-                collaborationSessionService.join(documentId, request == null ? null : request.clientSessionHint(), sessionAttributes(headerAccessor))
+                collaborationSessionService.join(documentId, sessionAttributes(headerAccessor))
         );
     }
 
