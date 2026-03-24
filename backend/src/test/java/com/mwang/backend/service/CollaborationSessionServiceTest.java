@@ -6,6 +6,8 @@ import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentVisibility;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.repositories.DocumentRepository;
+import com.mwang.backend.service.exception.CollaborationSessionAccessDeniedException;
+import com.mwang.backend.service.exception.CollaborationSessionNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -14,13 +16,20 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -50,7 +59,7 @@ class CollaborationSessionServiceTest {
         User actor = newUser("collab-user");
         Document document = newDocument(documentId, actor);
 
-        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of());
@@ -69,15 +78,49 @@ class CollaborationSessionServiceTest {
     }
 
     @Test
+    void joinGeneratesServerOwnedSessionIdWhenClientHintIsProvided() {
+        UUID documentId = UUID.randomUUID();
+        UUID clientSessionHint = UUID.randomUUID();
+        User actor = newUser("collab-user");
+        Document document = newDocument(documentId, actor);
+
+        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
+        doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
+        when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of());
+
+        var snapshot = sessionService.join(documentId, clientSessionHint);
+
+        ArgumentCaptor<com.mwang.backend.web.model.CollaborationSessionResponse> captor = ArgumentCaptor.forClass(com.mwang.backend.web.model.CollaborationSessionResponse.class);
+        verify(collaborationSessionStore).save(captor.capture());
+        assertThat(captor.getValue().sessionId()).isNotEqualTo(clientSessionHint);
+        assertThat(snapshot.sessions())
+                .singleElement()
+                .satisfies(session -> {
+                    assertThat(session.sessionId()).isEqualTo(captor.getValue().sessionId());
+                    assertThat(session.sessionId()).isNotEqualTo(clientSessionHint);
+                });
+    }
+
+    @Test
     void leaveRemovesExistingSessionFromMembershipSnapshot() {
         UUID documentId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
         User actor = newUser("session-owner");
         Document document = newDocument(documentId, actor);
+        com.mwang.backend.web.model.CollaborationSessionResponse ownedSession = new com.mwang.backend.web.model.CollaborationSessionResponse(
+                sessionId,
+                documentId,
+                actor.getId(),
+                actor.getUsername(),
+                Instant.parse("2026-03-23T12:00:00Z"),
+                Instant.parse("2026-03-23T12:01:00Z")
+        );
 
-        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
+        when(collaborationSessionStore.findBySessionId(documentId, sessionId)).thenReturn(Optional.of(ownedSession));
         when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of());
 
         var snapshot = sessionService.leave(documentId, sessionId);
@@ -86,6 +129,139 @@ class CollaborationSessionServiceTest {
         verify(eventPublisher).publishSessionSnapshot(documentId, snapshot);
         assertThat(snapshot.documentId()).isEqualTo(documentId);
         assertThat(snapshot.sessions()).isEmpty();
+    }
+
+    @Test
+    void leaveRejectsUnknownSessionDeterministically() {
+        UUID documentId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        User actor = newUser("session-owner");
+        Document document = newDocument(documentId, actor);
+
+        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
+        doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
+        when(collaborationSessionStore.findBySessionId(documentId, sessionId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> sessionService.leave(documentId, sessionId))
+                .isInstanceOf(CollaborationSessionNotFoundException.class);
+
+        verify(collaborationSessionStore, never()).remove(documentId, sessionId);
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void leaveRejectsRemovingAnotherUsersSession() {
+        UUID documentId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        User actor = newUser("session-owner");
+        User otherUser = newUser("other-user");
+        Document document = newDocument(documentId, actor);
+        com.mwang.backend.web.model.CollaborationSessionResponse otherUsersSession = new com.mwang.backend.web.model.CollaborationSessionResponse(
+                sessionId,
+                documentId,
+                otherUser.getId(),
+                otherUser.getUsername(),
+                Instant.parse("2026-03-23T12:00:00Z"),
+                Instant.parse("2026-03-23T12:01:00Z")
+        );
+
+        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
+        doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
+        when(collaborationSessionStore.findBySessionId(documentId, sessionId)).thenReturn(Optional.of(otherUsersSession));
+
+        assertThatThrownBy(() -> sessionService.leave(documentId, sessionId))
+                .isInstanceOf(CollaborationSessionAccessDeniedException.class);
+
+        verify(collaborationSessionStore, never()).remove(documentId, sessionId);
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void leaveRejectsSessionOwnedByAnotherSocketOfSameUser() {
+        UUID documentId = UUID.randomUUID();
+        User actor = newUser("session-owner");
+        Document document = newDocument(documentId, actor);
+        HashMap<String, Object> ownerSessionAttributes = new HashMap<>();
+        HashMap<String, Object> otherConnectionAttributes = new HashMap<>();
+
+        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
+        doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
+        when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of());
+
+        var joinSnapshot = sessionService.join(documentId, null, ownerSessionAttributes);
+        var ownedSession = joinSnapshot.sessions().get(0);
+
+        assertThatThrownBy(() -> sessionService.leave(documentId, ownedSession.sessionId(), otherConnectionAttributes))
+                .isInstanceOf(CollaborationSessionAccessDeniedException.class);
+
+        verify(collaborationSessionStore, never()).remove(documentId, ownedSession.sessionId());
+    }
+
+    @Test
+    void cleanupDisconnectedSessionsRemovesTrackedSessionsAndPublishesFreshSnapshots() {
+        UUID documentId = UUID.randomUUID();
+        User actor = newUser("socket-owner");
+        Document document = newDocument(documentId, actor);
+        HashMap<String, Object> sessionAttributes = new HashMap<>();
+
+        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
+        doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
+        when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of(), List.of());
+
+        var joinSnapshot = sessionService.join(documentId, null, sessionAttributes);
+        UUID createdSessionId = joinSnapshot.sessions().get(0).sessionId();
+        when(collaborationSessionStore.findBySessionId(documentId, createdSessionId)).thenReturn(Optional.of(joinSnapshot.sessions().get(0)));
+
+        var cleanupSnapshots = sessionService.cleanupDisconnectedSessions(sessionAttributes);
+
+        assertThat(cleanupSnapshots)
+                .singleElement()
+                .satisfies(snapshot -> {
+                    assertThat(snapshot.documentId()).isEqualTo(documentId);
+                    assertThat(snapshot.sessions()).isEmpty();
+                });
+        verify(collaborationSessionStore).remove(documentId, createdSessionId);
+        ArgumentCaptor<com.mwang.backend.web.model.CollaborationSessionSnapshot> snapshotCaptor =
+                ArgumentCaptor.forClass(com.mwang.backend.web.model.CollaborationSessionSnapshot.class);
+        verify(eventPublisher, times(2)).publishSessionSnapshot(eq(documentId), snapshotCaptor.capture());
+        assertThat(snapshotCaptor.getAllValues().get(1).sessions()).isEmpty();
+        assertThat(sessionAttributes).isEmpty();
+    }
+
+    @Test
+    void cleanupDisconnectedSessionsSkipsSessionsAlreadyLeftExplicitly() {
+        UUID documentId = UUID.randomUUID();
+        User actor = newUser("socket-owner");
+        Document document = newDocument(documentId, actor);
+        HashMap<String, Object> sessionAttributes = new HashMap<>();
+
+        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
+        doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
+        when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of(), List.of());
+
+        var joinSnapshot = sessionService.join(documentId, null, sessionAttributes);
+        UUID createdSessionId = joinSnapshot.sessions().get(0).sessionId();
+        com.mwang.backend.web.model.CollaborationSessionResponse ownedSession = new com.mwang.backend.web.model.CollaborationSessionResponse(
+                createdSessionId,
+                documentId,
+                actor.getId(),
+                actor.getUsername(),
+                Instant.parse("2026-03-23T12:00:00Z"),
+                Instant.parse("2026-03-23T12:01:00Z")
+        );
+        when(collaborationSessionStore.findBySessionId(documentId, createdSessionId)).thenReturn(Optional.of(ownedSession), Optional.empty());
+
+        sessionService.leave(documentId, createdSessionId, sessionAttributes);
+
+        assertThat(sessionService.cleanupDisconnectedSessions(sessionAttributes)).isEmpty();
+        verify(collaborationSessionStore, times(1)).remove(documentId, createdSessionId);
+        verify(eventPublisher, times(2)).publishSessionSnapshot(eq(documentId), any());
+        assertThat(sessionAttributes).isEmpty();
     }
 
     private User newUser(String username) {
