@@ -5,6 +5,8 @@ import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.repositories.DocumentRepository;
+import com.mwang.backend.service.exception.CollaborationSessionAccessDeniedException;
+import com.mwang.backend.service.exception.CollaborationSessionNotFoundException;
 import com.mwang.backend.service.exception.DocumentNotFoundException;
 import com.mwang.backend.web.model.CollaborationSessionResponse;
 import com.mwang.backend.web.model.CollaborationSessionSnapshot;
@@ -13,7 +15,11 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -40,13 +46,18 @@ public class CollaborationSessionServiceImpl implements CollaborationSessionServ
 
     @Override
     public CollaborationSessionSnapshot join(UUID documentId, UUID clientSessionHint) {
-        User actor = currentUserProvider.requireCurrentUser();
+        return join(documentId, clientSessionHint, null);
+    }
+
+    @Override
+    public CollaborationSessionSnapshot join(UUID documentId, UUID clientSessionHint, Map<String, Object> sessionAttributes) {
+        User actor = currentUserProvider.requireCurrentUser(sessionAttributes);
         Document document = requireDocument(documentId);
         documentAuthorizationService.assertCanRead(document, actor);
 
         Instant now = Instant.now();
         CollaborationSessionResponse session = new CollaborationSessionResponse(
-                clientSessionHint != null ? clientSessionHint : UUID.randomUUID(),
+                UUID.randomUUID(),
                 documentId,
                 actor.getId(),
                 actor.getUsername(),
@@ -54,6 +65,7 @@ public class CollaborationSessionServiceImpl implements CollaborationSessionServ
                 now
         );
         collaborationSessionStore.save(session);
+        CollaborationSessionTracking.track(sessionAttributes, session);
 
         CollaborationSessionSnapshot snapshot = snapshotFor(documentId, session);
         eventPublisher.publishSessionSnapshot(documentId, snapshot);
@@ -62,14 +74,67 @@ public class CollaborationSessionServiceImpl implements CollaborationSessionServ
 
     @Override
     public CollaborationSessionSnapshot leave(UUID documentId, UUID sessionId) {
-        User actor = currentUserProvider.requireCurrentUser();
+        return leave(documentId, sessionId, null);
+    }
+
+    @Override
+    public CollaborationSessionSnapshot leave(UUID documentId, UUID sessionId, Map<String, Object> sessionAttributes) {
+        User actor = currentUserProvider.requireCurrentUser(sessionAttributes);
         Document document = requireDocument(documentId);
         documentAuthorizationService.assertCanRead(document, actor);
 
+        if (sessionAttributes != null && !CollaborationSessionTracking.isTracked(sessionAttributes, documentId, sessionId)) {
+            throw new CollaborationSessionAccessDeniedException(documentId, sessionId, actor.getId());
+        }
+
+        CollaborationSessionResponse session = collaborationSessionStore.findBySessionId(documentId, sessionId)
+                .orElseThrow(() -> new CollaborationSessionNotFoundException(documentId, sessionId));
+        if (!session.userId().equals(actor.getId())) {
+            throw new CollaborationSessionAccessDeniedException(documentId, sessionId, actor.getId());
+        }
+
         collaborationSessionStore.remove(documentId, sessionId);
+        CollaborationSessionTracking.untrack(sessionAttributes, documentId, sessionId);
         CollaborationSessionSnapshot snapshot = snapshotFor(documentId, null);
         eventPublisher.publishSessionSnapshot(documentId, snapshot);
         return snapshot;
+    }
+
+    @Override
+    public List<CollaborationSessionSnapshot> cleanupDisconnectedSessions(Map<String, Object> sessionAttributes) {
+        List<CollaborationSessionTracking.TrackedSessionRef> trackedSessions = CollaborationSessionTracking.trackedSessions(sessionAttributes);
+        if (trackedSessions.isEmpty()) {
+            return List.of();
+        }
+
+        Map<UUID, Set<UUID>> sessionsByDocument = new LinkedHashMap<>();
+        for (CollaborationSessionTracking.TrackedSessionRef trackedSession : trackedSessions) {
+            sessionsByDocument
+                    .computeIfAbsent(trackedSession.documentId(), ignored -> new LinkedHashSet<>())
+                    .add(trackedSession.sessionId());
+        }
+
+        List<CollaborationSessionSnapshot> snapshots = new ArrayList<>();
+        for (Map.Entry<UUID, Set<UUID>> entry : sessionsByDocument.entrySet()) {
+            UUID documentId = entry.getKey();
+            boolean removedAny = false;
+            for (UUID sessionId : entry.getValue()) {
+                if (collaborationSessionStore.findBySessionId(documentId, sessionId).isPresent()) {
+                    collaborationSessionStore.remove(documentId, sessionId);
+                    removedAny = true;
+                }
+            }
+            if (!removedAny) {
+                continue;
+            }
+
+            CollaborationSessionSnapshot snapshot = snapshotFor(documentId, null);
+            eventPublisher.publishSessionSnapshot(documentId, snapshot);
+            snapshots.add(snapshot);
+        }
+
+        CollaborationSessionTracking.clear(sessionAttributes);
+        return snapshots;
     }
 
     private CollaborationSessionSnapshot snapshotFor(UUID documentId, CollaborationSessionResponse newlyCreatedSession) {
