@@ -64,9 +64,14 @@ public class CollaborationController {
             @DestinationVariable UUID documentId,
             @Payload SubmitOperationRequest request,
             SimpMessageHeaderAccessor headerAccessor) {
+        Map<String, Object> base = sessionAttributes(headerAccessor);
+        Map<String, Object> attrs = base != null ? new java.util.HashMap<>(base) : new java.util.HashMap<>();
+        if (headerAccessor != null) {
+            attrs.put("simpSessionId", headerAccessor.getSessionId());
+        }
         collaborationBroadcastService.broadcastAcceptedOperation(
                 documentId,
-                documentOperationService.submitOperation(documentId, request, sessionAttributes(headerAccessor))
+                documentOperationService.submitOperation(documentId, request, attrs)
         );
     }
 

@@ -54,7 +54,7 @@ class CollaborationControllerOperationTest {
         UUID operationId = UUID.randomUUID();
         JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         SubmitOperationRequest request = new SubmitOperationRequest(
-                operationId, 0L, DocumentOperationType.INSERT_TEXT, payload, null);
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
         AcceptedOperationResponse response = new AcceptedOperationResponse(
                 operationId, documentId, 1L, DocumentOperationType.INSERT_TEXT, payload,
                 UUID.randomUUID(), "", Instant.now());
@@ -74,7 +74,7 @@ class CollaborationControllerOperationTest {
         UUID documentId = UUID.randomUUID();
         JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"x\"}");
         SubmitOperationRequest request = new SubmitOperationRequest(
-                UUID.randomUUID(), 0L, DocumentOperationType.INSERT_TEXT, payload, null);
+                UUID.randomUUID(), 0L, DocumentOperationType.INSERT_TEXT, payload);
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
         accessor.setSessionAttributes(new java.util.HashMap<>());
 
@@ -91,7 +91,7 @@ class CollaborationControllerOperationTest {
         UUID documentId = UUID.randomUUID();
         JsonNode payload = mapper.createObjectNode();
         SubmitOperationRequest request = new SubmitOperationRequest(
-                UUID.randomUUID(), 0L, DocumentOperationType.INSERT_TEXT, payload, null);
+                UUID.randomUUID(), 0L, DocumentOperationType.INSERT_TEXT, payload);
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
         accessor.setSessionAttributes(new java.util.HashMap<>());
 
@@ -107,7 +107,7 @@ class CollaborationControllerOperationTest {
         UUID documentId = UUID.randomUUID();
         JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"x\"}");
         SubmitOperationRequest request = new SubmitOperationRequest(
-                UUID.randomUUID(), 0L, DocumentOperationType.INSERT_TEXT, payload, null);
+                UUID.randomUUID(), 0L, DocumentOperationType.INSERT_TEXT, payload);
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
         accessor.setSessionAttributes(new java.util.HashMap<>());
 

@@ -10,6 +10,5 @@ public record SubmitOperationRequest(
         @NotNull UUID operationId,
         @NotNull Long baseVersion,
         @NotNull DocumentOperationType operationType,
-        @NotNull JsonNode payload,
-        String clientSessionId
+        @NotNull JsonNode payload
 ) {}
