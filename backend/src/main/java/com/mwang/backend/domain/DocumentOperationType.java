@@ -6,5 +6,6 @@ public enum DocumentOperationType {
     FORMAT_RANGE,
     SPLIT_BLOCK,
     MERGE_BLOCK,
-    SET_BLOCK_TYPE
+    SET_BLOCK_TYPE,
+    NO_OP
 }
