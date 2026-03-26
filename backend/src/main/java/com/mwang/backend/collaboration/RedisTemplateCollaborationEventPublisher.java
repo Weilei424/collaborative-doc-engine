@@ -2,6 +2,7 @@ package com.mwang.backend.collaboration;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.CollaborationSessionSnapshot;
 import com.mwang.backend.web.model.PresenceEventResponse;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -45,6 +46,11 @@ public class RedisTemplateCollaborationEventPublisher implements RedisCollaborat
                 null,
                 event
         ));
+    }
+
+    @Override
+    public void publishAcceptedOperation(UUID documentId, AcceptedOperationResponse response) {
+        // Phase 5 will implement Redis cross-instance fanout here
     }
 
     private void publish(RedisCollaborationEvent event) {
