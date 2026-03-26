@@ -5,7 +5,9 @@ import com.mwang.backend.service.exception.CollaborationSessionNotFoundException
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
 import com.mwang.backend.service.exception.DocumentNotFoundException;
 import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
+import com.mwang.backend.service.exception.InvalidOperationException;
 import com.mwang.backend.service.exception.InvalidPresenceUpdateException;
+import com.mwang.backend.service.exception.OperationConflictException;
 import com.mwang.backend.service.exception.UserContextRequiredException;
 import com.mwang.backend.service.exception.UserNotFoundException;
 import com.mwang.backend.web.model.ApiErrorResponse;
@@ -64,6 +66,18 @@ public class CollaborationMessagingExceptionHandler {
     @SendToUser("/queue/errors")
     public ApiErrorResponse handleInvalidCollaborationRequest(InvalidCollaborationRequestException ex) {
         return ApiErrorResponse.of("INVALID_COLLABORATION_REQUEST", ex.getMessage());
+    }
+
+    @MessageExceptionHandler(InvalidOperationException.class)
+    @SendToUser("/queue/errors")
+    public ApiErrorResponse handleInvalidOperation(InvalidOperationException ex) {
+        return ApiErrorResponse.of("INVALID_OPERATION", ex.getMessage());
+    }
+
+    @MessageExceptionHandler(OperationConflictException.class)
+    @SendToUser("/queue/errors")
+    public ApiErrorResponse handleOperationConflict(OperationConflictException ex) {
+        return ApiErrorResponse.of("OPERATION_CONFLICT", ex.getMessage());
     }
 
     @MessageExceptionHandler(MessageConversionException.class)
