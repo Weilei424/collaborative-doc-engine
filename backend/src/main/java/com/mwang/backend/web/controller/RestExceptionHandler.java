@@ -5,6 +5,8 @@ import com.mwang.backend.service.exception.DocumentAccessDeniedException;
 import com.mwang.backend.service.exception.DocumentNotFoundException;
 import com.mwang.backend.service.exception.InvalidDocumentRequestException;
 import com.mwang.backend.service.exception.InvalidDocumentScopeException;
+import com.mwang.backend.service.exception.InvalidOperationException;
+import com.mwang.backend.service.exception.OperationConflictException;
 import com.mwang.backend.service.exception.UserContextRequiredException;
 import com.mwang.backend.service.exception.UserNotFoundException;
 import com.mwang.backend.web.model.ApiErrorResponse;
@@ -46,6 +48,16 @@ public class RestExceptionHandler {
     @ExceptionHandler(InvalidDocumentScopeException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidScope(InvalidDocumentScopeException ex) {
         return ResponseEntity.badRequest().body(ApiErrorResponse.of("INVALID_SCOPE", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidOperationException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidOperation(InvalidOperationException ex) {
+        return ResponseEntity.badRequest().body(ApiErrorResponse.of("INVALID_OPERATION", ex.getMessage()));
+    }
+
+    @ExceptionHandler(OperationConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleOperationConflict(OperationConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiErrorResponse.of("OPERATION_CONFLICT", ex.getMessage()));
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, ConstraintViolationException.class, InvalidDocumentRequestException.class, HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
