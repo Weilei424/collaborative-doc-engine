@@ -79,7 +79,7 @@ class WebSocketConfigTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"sessions", "presence"})
+    @ValueSource(strings = {"sessions", "presence", "operations"})
     void authorizeSubscriptionRejectsProtectedTopicWhenActorCannotReadDocument(String topicSuffix) {
         UUID documentId = UUID.randomUUID();
         User actor = actor();
@@ -103,7 +103,7 @@ class WebSocketConfigTest {
     @Test
     void authorizeSubscriptionIgnoresUnprotectedDestinations() {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
-        accessor.setDestination("/topic/documents/" + UUID.randomUUID() + "/operations");
+        accessor.setDestination("/topic/documents/" + UUID.randomUUID() + "/unknown");
 
         webSocketConfig.authorizeSubscription(accessor);
 
