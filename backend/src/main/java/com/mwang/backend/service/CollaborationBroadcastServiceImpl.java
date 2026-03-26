@@ -1,5 +1,6 @@
 package com.mwang.backend.service;
 
+import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.CollaborationSessionSnapshot;
 import com.mwang.backend.web.model.PresenceEventResponse;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -24,5 +25,10 @@ public class CollaborationBroadcastServiceImpl implements CollaborationBroadcast
     @Override
     public void broadcastPresenceEvent(UUID documentId, PresenceEventResponse event) {
         messagingTemplate.convertAndSend("/topic/documents/" + documentId + "/presence", event);
+    }
+
+    @Override
+    public void broadcastAcceptedOperation(UUID documentId, AcceptedOperationResponse response) {
+        messagingTemplate.convertAndSend("/topic/documents/" + documentId + "/operations", response);
     }
 }
