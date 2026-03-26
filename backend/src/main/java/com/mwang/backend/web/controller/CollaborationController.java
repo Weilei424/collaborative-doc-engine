@@ -3,9 +3,11 @@ package com.mwang.backend.web.controller;
 import com.mwang.backend.service.CollaborationBroadcastService;
 import com.mwang.backend.service.CollaborationPresenceService;
 import com.mwang.backend.service.CollaborationSessionService;
+import com.mwang.backend.service.DocumentOperationService;
 import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
 import com.mwang.backend.web.model.LeaveSessionRequest;
 import com.mwang.backend.web.model.PresenceUpdateRequest;
+import com.mwang.backend.web.model.SubmitOperationRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -23,6 +25,7 @@ public class CollaborationController {
     private final CollaborationSessionService collaborationSessionService;
     private final CollaborationPresenceService collaborationPresenceService;
     private final CollaborationBroadcastService collaborationBroadcastService;
+    private final DocumentOperationService documentOperationService;
 
     @MessageMapping("/documents/{documentId}/sessions.join")
     public void joinSession(
@@ -53,6 +56,17 @@ public class CollaborationController {
         collaborationBroadcastService.broadcastPresenceEvent(
                 documentId,
                 collaborationPresenceService.publishPresence(documentId, request, sessionAttributes(headerAccessor))
+        );
+    }
+
+    @MessageMapping("/documents/{documentId}/operations.submit")
+    public void submitOperation(
+            @DestinationVariable UUID documentId,
+            @Payload SubmitOperationRequest request,
+            SimpMessageHeaderAccessor headerAccessor) {
+        collaborationBroadcastService.broadcastAcceptedOperation(
+                documentId,
+                documentOperationService.submitOperation(documentId, request, sessionAttributes(headerAccessor))
         );
     }
 
