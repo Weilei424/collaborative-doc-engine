@@ -32,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -113,6 +114,8 @@ class DocumentOperationServiceTest {
         assertThat(response.operationId()).isEqualTo(operationId);
         assertThat(response.serverVersion()).isEqualTo(1L);
         verify(operationRepository, never()).save(any());
+        // Auth checked once (pre-idempotency); idempotency path returns before the pessimistic lock
+        verify(authorizationService, times(1)).assertCanWrite(document, actor);
     }
 
     @Test
@@ -144,6 +147,8 @@ class DocumentOperationServiceTest {
         assertThat(response.clientSessionId()).isEqualTo("sess-abc");
         verify(operationRepository).save(any(DocumentOperation.class));
         verify(documentRepository).save(document);
+        // Auth checked twice: once pre-idempotency on unlocked doc, once post-lock on locked doc
+        verify(authorizationService, times(2)).assertCanWrite(document, actor);
     }
 
     @Test
@@ -188,5 +193,7 @@ class DocumentOperationServiceTest {
         // Document content NOT modified — objectMapper.readValue should never be called for tree deserialization
         verify(objectMapper, never()).readValue(any(String.class), org.mockito.ArgumentMatchers.eq(
                 com.mwang.backend.domain.model.DocumentTree.class));
+        // Auth checked twice: once pre-idempotency on unlocked doc, once post-lock on locked doc
+        verify(authorizationService, times(2)).assertCanWrite(document, actor);
     }
 }
