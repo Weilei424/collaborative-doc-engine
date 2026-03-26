@@ -76,6 +76,10 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         document = documentRepository.findByIdWithPessimisticLock(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
+        // 5a. Re-check authorization against the locked document (closes TOCTOU gap between the
+        //     non-locking read above and the now-acquired pessimistic write lock)
+        authorizationService.assertCanWrite(document, actor);
+
         // 6. Load intervening operations (document is already locked by pessimistic write)
         List<DocumentOperation> intervening = operationRepository
                 .findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(documentId, request.baseVersion());
