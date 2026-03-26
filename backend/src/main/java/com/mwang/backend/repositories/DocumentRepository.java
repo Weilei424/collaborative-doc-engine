@@ -1,8 +1,10 @@
 package com.mwang.backend.repositories;
 
 import com.mwang.backend.domain.Document;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -65,4 +67,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
             WHERE d.id IN :ids
             """)
     List<Document> findAllDetailedByIdIn(@Param("ids") Collection<UUID> ids);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT d FROM Document d WHERE d.id = :id")
+    Optional<Document> findByIdWithPessimisticLock(@Param("id") UUID id);
 }
