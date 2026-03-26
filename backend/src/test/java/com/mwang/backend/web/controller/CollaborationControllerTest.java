@@ -3,6 +3,7 @@ package com.mwang.backend.web.controller;
 import com.mwang.backend.service.CollaborationBroadcastService;
 import com.mwang.backend.service.CollaborationPresenceService;
 import com.mwang.backend.service.CollaborationSessionService;
+import com.mwang.backend.service.DocumentOperationService;
 import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
 import com.mwang.backend.web.model.CollaborationSessionResponse;
 import com.mwang.backend.web.model.CollaborationSessionSnapshot;
@@ -40,7 +41,7 @@ class CollaborationControllerTest {
         sessionService = mock(CollaborationSessionService.class);
         presenceService = mock(CollaborationPresenceService.class);
         broadcastService = mock(CollaborationBroadcastService.class);
-        collaborationController = new CollaborationController(sessionService, presenceService, broadcastService);
+        collaborationController = new CollaborationController(sessionService, presenceService, broadcastService, mock(DocumentOperationService.class));
     }
 
     @Test
