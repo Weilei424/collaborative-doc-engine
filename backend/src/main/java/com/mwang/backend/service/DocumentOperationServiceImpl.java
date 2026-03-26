@@ -60,19 +60,21 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         // 2. Payload validation (fail fast before touching the DB)
         validatePayload(request.operationType(), request.payload());
 
-        // 3. Idempotency check (before acquiring lock — no document needed)
+        // 3. Load document for auth (non-locking read — idempotency fast-path must still be authorized)
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        authorizationService.assertCanWrite(document, actor);
+
+        // 4. Idempotency check (post-auth, pre-lock — avoids acquiring write lock on duplicate submissions)
         Optional<DocumentOperation> existingOpt = operationRepository
                 .findByDocumentIdAndOperationId(documentId, request.operationId());
         if (existingOpt.isPresent()) {
             return toResponse(existingOpt.get(), documentId);
         }
 
-        // 4 + 5. Acquire pessimistic lock then authorize.
-        // Note: authorization requires the document (to check owner/collaborators), so the lock and auth
-        // must happen together after idempotency short-circuit.
-        Document document = documentRepository.findByIdWithPessimisticLock(documentId)
+        // 5. Acquire pessimistic lock for new operation
+        document = documentRepository.findByIdWithPessimisticLock(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
-        authorizationService.assertCanWrite(document, actor);
 
         // 6. Load intervening operations (document is already locked by pessimistic write)
         List<DocumentOperation> intervening = operationRepository
@@ -112,7 +114,8 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         }
 
         // 9. Persist accepted operation and updated document
-        String clientSessionId = request.clientSessionId() != null ? request.clientSessionId() : "";
+        Object rawSessionId = sessionAttributes.get("simpSessionId");
+        String clientSessionId = rawSessionId != null ? rawSessionId.toString() : "";
         DocumentOperation accepted = DocumentOperation.builder()
                 .document(document)
                 .actor(actor)

@@ -71,12 +71,12 @@ class DocumentOperationServiceTest {
         // Use valid INSERT_TEXT payload so validation passes and we reach the auth check
         JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         when(currentUserProvider.requireCurrentUser(sessionAttributes)).thenReturn(actor);
-        when(documentRepository.findByIdWithPessimisticLock(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         org.mockito.Mockito.doThrow(new DocumentAccessDeniedException(documentId, actor.getId()))
                 .when(authorizationService).assertCanWrite(document, actor);
 
         SubmitOperationRequest request = new SubmitOperationRequest(
-                operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload, null);
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload);
 
         assertThatThrownBy(() -> service.submitOperation(documentId, request, sessionAttributes))
                 .isInstanceOf(DocumentAccessDeniedException.class);
@@ -87,6 +87,8 @@ class DocumentOperationServiceTest {
     void submitOperationIsIdempotentForDuplicateOperationId() throws Exception {
         JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         when(currentUserProvider.requireCurrentUser(sessionAttributes)).thenReturn(actor);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        // assertCanWrite does not throw — actor is authorized
 
         DocumentOperation existing = DocumentOperation.builder()
                 .operationId(operationId).serverVersion(1L)
@@ -104,7 +106,7 @@ class DocumentOperationServiceTest {
                 .thenReturn(realMapper.readTree(existing.getPayload()));
 
         SubmitOperationRequest request = new SubmitOperationRequest(
-                operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload, null);
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload);
 
         AcceptedOperationResponse response = service.submitOperation(documentId, request, sessionAttributes);
 
@@ -116,10 +118,13 @@ class DocumentOperationServiceTest {
     @Test
     void submitOperationPersistsAndReturnsAcceptedResponse() throws Exception {
         JsonNode payload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
-        when(currentUserProvider.requireCurrentUser(sessionAttributes)).thenReturn(actor);
+        Map<String, Object> attrsWithSession = new java.util.HashMap<>(sessionAttributes);
+        attrsWithSession.put("simpSessionId", "sess-abc");
+        when(currentUserProvider.requireCurrentUser(attrsWithSession)).thenReturn(actor);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        // assertCanWrite does not throw — actor is authorized
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId)).thenReturn(Optional.empty());
         when(documentRepository.findByIdWithPessimisticLock(documentId)).thenReturn(Optional.of(document));
-        // assertCanWrite does not throw — actor is authorized
         when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(documentId, 0L))
                 .thenReturn(List.of());
 
@@ -130,9 +135,9 @@ class DocumentOperationServiceTest {
         when(objectMapper.writeValueAsString(any())).thenReturn("{\"children\":[]}");
 
         SubmitOperationRequest request = new SubmitOperationRequest(
-                operationId, 0L, DocumentOperationType.INSERT_TEXT, payload, "sess-abc");
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
 
-        AcceptedOperationResponse response = service.submitOperation(documentId, request, sessionAttributes);
+        AcceptedOperationResponse response = service.submitOperation(documentId, request, attrsWithSession);
 
         assertThat(response.operationId()).isEqualTo(operationId);
         assertThat(response.serverVersion()).isEqualTo(1L);
@@ -156,9 +161,10 @@ class DocumentOperationServiceTest {
                 .build();
 
         when(currentUserProvider.requireCurrentUser(sessionAttributes)).thenReturn(actor);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        // assertCanWrite does not throw — actor is authorized
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId)).thenReturn(Optional.empty());
         when(documentRepository.findByIdWithPessimisticLock(documentId)).thenReturn(Optional.of(document));
-        // assertCanWrite does not throw
         when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(documentId, 0L))
                 .thenReturn(List.of(interveningOp));
         when(objectMapper.readTree(interveningOp.getPayload()))
@@ -167,7 +173,7 @@ class DocumentOperationServiceTest {
         when(transformer.transform(any(), any(), any(), any())).thenReturn(Optional.empty());
 
         SubmitOperationRequest request = new SubmitOperationRequest(
-                operationId, 0L, DocumentOperationType.INSERT_TEXT, payload, "sess-abc");
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
 
         AcceptedOperationResponse response = service.submitOperation(documentId, request, sessionAttributes);
 
