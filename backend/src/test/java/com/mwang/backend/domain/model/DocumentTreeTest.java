@@ -125,6 +125,22 @@ class DocumentTreeTest {
     }
 
     @Test
+    void splitBlockPreservesFormattingOnBothHalves() {
+        InlineFormat boldFormat = new InlineFormat(0, 11, java.util.Map.of("bold", true));
+        DocumentNode para = DocumentNode.builder().type("paragraph").text("hello world")
+                .formats(new java.util.ArrayList<>(List.of(boldFormat))).build();
+        DocumentTree tree = DocumentTree.builder().children(new java.util.ArrayList<>(List.of(para))).build();
+        tree.applyOperation(DocumentOperationType.SPLIT_BLOCK, payload("{\"path\":[0],\"offset\":5}"));
+        assertThat(tree.getChildren()).hasSize(2);
+        assertThat(tree.getChildren().get(0).getFormats()).hasSize(1);
+        assertThat(tree.getChildren().get(0).getFormats().get(0).getOffset()).isEqualTo(0);
+        assertThat(tree.getChildren().get(0).getFormats().get(0).getLength()).isEqualTo(5);
+        assertThat(tree.getChildren().get(1).getFormats()).hasSize(1);
+        assertThat(tree.getChildren().get(1).getFormats().get(0).getOffset()).isEqualTo(0);
+        assertThat(tree.getChildren().get(1).getFormats().get(0).getLength()).isEqualTo(6);
+    }
+
+    @Test
     void applyMergeBlockMergesWithNextSibling() {
         DocumentNode first = DocumentNode.builder().type("paragraph").text("hello").formats(new java.util.ArrayList<>()).build();
         DocumentNode second = DocumentNode.builder().type("paragraph").text(" world").formats(new java.util.ArrayList<>()).build();

@@ -123,7 +123,9 @@ public class DocumentTree {
             } else if (fmt.getOffset() >= offset) {
                 secondFormats.add(new InlineFormat(fmt.getOffset() - offset, fmt.getLength(), fmt.getAttributes()));
             } else {
+                // spans the split — clip to first half, carry remainder into second half
                 firstFormats.add(new InlineFormat(fmt.getOffset(), offset - fmt.getOffset(), fmt.getAttributes()));
+                secondFormats.add(new InlineFormat(0, fEnd - offset, fmt.getAttributes()));
             }
         }
 
