@@ -80,6 +80,15 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         //     non-locking read above and the now-acquired pessimistic write lock)
         authorizationService.assertCanWrite(document, actor);
 
+        // 5b. Re-check idempotency under the lock — a concurrent duplicate submission may have
+        //     passed the pre-lock check above, blocked here, and committed while we waited.
+        //     Without this re-check, the second thread would attempt a duplicate insert and hit
+        //     the unique constraint instead of returning the original accepted response.
+        existingOpt = operationRepository.findByDocumentIdAndOperationId(documentId, request.operationId());
+        if (existingOpt.isPresent()) {
+            return toResponse(existingOpt.get(), documentId);
+        }
+
         // 6. Load intervening operations (document is already locked by pessimistic write)
         List<DocumentOperation> intervening = operationRepository
                 .findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(documentId, request.baseVersion());
