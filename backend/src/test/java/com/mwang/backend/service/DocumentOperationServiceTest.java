@@ -119,6 +119,39 @@ class DocumentOperationServiceTest {
     }
 
     @Test
+    void submitOperationIsIdempotentForDuplicateFoundAfterLock() throws Exception {
+        // Simulates the race where the pre-lock idempotency check misses, but the post-lock
+        // re-check finds the operation committed by a concurrent request.
+        JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
+        when(currentUserProvider.requireCurrentUser(sessionAttributes)).thenReturn(actor);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        // Pre-lock check: not found (concurrent request hasn't committed yet)
+        when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
+                .thenReturn(Optional.empty())
+                // Post-lock check: found (concurrent request committed while we blocked on lock)
+                .thenReturn(Optional.of(DocumentOperation.builder()
+                        .operationId(operationId).serverVersion(1L)
+                        .operationType(DocumentOperationType.INSERT_TEXT)
+                        .payload("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}")
+                        .clientSessionId("sess-concurrent")
+                        .createdAt(Instant.now())
+                        .document(document).actor(actor).baseVersion(0L)
+                        .build()));
+        when(documentRepository.findByIdWithPessimisticLock(documentId)).thenReturn(Optional.of(document));
+        when(objectMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}"))
+                .thenReturn(realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}"));
+
+        SubmitOperationRequest request = new SubmitOperationRequest(
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload);
+
+        AcceptedOperationResponse response = service.submitOperation(documentId, request, sessionAttributes);
+
+        assertThat(response.operationId()).isEqualTo(operationId);
+        assertThat(response.serverVersion()).isEqualTo(1L);
+        verify(operationRepository, never()).save(any());
+    }
+
+    @Test
     void submitOperationPersistsAndReturnsAcceptedResponse() throws Exception {
         JsonNode payload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         Map<String, Object> attrsWithSession = new java.util.HashMap<>(sessionAttributes);
