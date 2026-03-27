@@ -8,11 +8,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
@@ -41,6 +43,10 @@ class KafkaOperationEventPublisherTest {
 
         publisher = new KafkaOperationEventPublisher(kafkaTemplate, objectMapper, retryTemplate);
         ReflectionTestUtils.setField(publisher, "operationsTopic", "document-operations");
+
+        // Default: send() returns a completed future so .get() doesn't NPE
+        when(kafkaTemplate.send(any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
 
         documentId = UUID.randomUUID();
         operationId = UUID.randomUUID();
@@ -82,7 +88,10 @@ class KafkaOperationEventPublisherTest {
 
     @Test
     void recoversGracefullyWhenAllRetriesExhausted() {
-        when(kafkaTemplate.send(any(), any(), any())).thenThrow(new RuntimeException("broker down"));
+        // Simulate async delivery failure — the representative broker failure path
+        CompletableFuture<SendResult<String, String>> failedFuture = new CompletableFuture<>();
+        failedFuture.completeExceptionally(new RuntimeException("broker down"));
+        when(kafkaTemplate.send(any(), any(), any())).thenReturn(failedFuture);
 
         KafkaOperationEventPublisher failingPublisher =
                 new KafkaOperationEventPublisher(kafkaTemplate, objectMapper,
