@@ -8,6 +8,7 @@ import com.mwang.backend.domain.DocumentOperation;
 import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.domain.model.DocumentTree;
+import com.mwang.backend.kafka.AcceptedOperationDomainEvent;
 import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
@@ -15,6 +16,7 @@ import com.mwang.backend.service.exception.DocumentNotFoundException;
 import com.mwang.backend.service.exception.InvalidOperationException;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.SubmitOperationRequest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +35,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     private final DocumentAuthorizationService authorizationService;
     private final OperationTransformer transformer;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DocumentOperationServiceImpl(
             DocumentRepository documentRepository,
@@ -40,13 +43,15 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             CurrentUserProvider currentUserProvider,
             DocumentAuthorizationService authorizationService,
             OperationTransformer transformer,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            ApplicationEventPublisher eventPublisher) {
         this.documentRepository = documentRepository;
         this.operationRepository = operationRepository;
         this.currentUserProvider = currentUserProvider;
         this.authorizationService = authorizationService;
         this.transformer = transformer;
         this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -144,10 +149,14 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         document.setCurrentVersion(nextVersion);
         documentRepository.save(document);
 
-        return new AcceptedOperationResponse(
+        AcceptedOperationResponse acceptedResponse = new AcceptedOperationResponse(
                 request.operationId(), documentId, nextVersion,
                 currentType, currentPayload, actor.getId(),
                 clientSessionId, accepted.getCreatedAt() != null ? accepted.getCreatedAt() : Instant.now());
+
+        eventPublisher.publishEvent(new AcceptedOperationDomainEvent(acceptedResponse, request.baseVersion()));
+
+        return acceptedResponse;
     }
 
     private void validatePayload(DocumentOperationType type, JsonNode payload) {
