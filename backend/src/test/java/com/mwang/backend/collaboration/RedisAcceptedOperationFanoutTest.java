@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.service.CollaborationBroadcastService;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -27,10 +26,9 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-@Disabled("Requires Docker via Testcontainers - skipped due to Docker Desktop named-pipe compatibility on this machine")
 @SpringBootTest
 @ActiveProfiles("test")
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 class RedisAcceptedOperationFanoutTest {
 
     @Container
@@ -81,8 +79,8 @@ class RedisAcceptedOperationFanoutTest {
                 RedisCollaborationChannels.documentOperations(documentId),
                 objectMapper.writeValueAsString(event));
 
-        Thread.sleep(500);
-        verify(collaborationBroadcastService, never()).broadcastAcceptedOperation(documentId, response);
+        await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(2)).untilAsserted(() ->
+                verify(collaborationBroadcastService, never()).broadcastAcceptedOperation(documentId, response));
     }
 
     private AcceptedOperationResponse buildResponse(UUID documentId) {
