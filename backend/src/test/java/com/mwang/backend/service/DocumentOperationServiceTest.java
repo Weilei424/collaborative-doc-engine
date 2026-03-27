@@ -9,6 +9,7 @@ import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.domain.model.DocumentNode;
 import com.mwang.backend.domain.model.DocumentTree;
+import com.mwang.backend.kafka.AcceptedOperationDomainEvent;
 import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
@@ -18,9 +19,11 @@ import com.mwang.backend.web.model.SubmitOperationRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.util.List;
@@ -45,6 +48,7 @@ class DocumentOperationServiceTest {
     @Mock private DocumentAuthorizationService authorizationService;
     @Mock private OperationTransformer transformer;
     @Mock private ObjectMapper objectMapper;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private DocumentOperationServiceImpl service;
@@ -228,5 +232,61 @@ class DocumentOperationServiceTest {
                 com.mwang.backend.domain.model.DocumentTree.class));
         // Auth checked twice: once pre-idempotency on unlocked doc, once post-lock on locked doc
         verify(authorizationService, times(2)).assertCanWrite(document, actor);
+    }
+
+    @Test
+    void submitOperationPublishesDomainEventForNewOperation() throws Exception {
+        JsonNode payload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
+        Map<String, Object> attrsWithSession = new java.util.HashMap<>(sessionAttributes);
+        attrsWithSession.put("simpSessionId", "sess-pub");
+        when(currentUserProvider.requireCurrentUser(attrsWithSession)).thenReturn(actor);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
+                .thenReturn(Optional.empty());
+        when(documentRepository.findByIdWithPessimisticLock(documentId)).thenReturn(Optional.of(document));
+        when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
+                documentId, 0L)).thenReturn(List.of());
+        DocumentNode node = DocumentNode.builder().type("paragraph").text("").build();
+        DocumentTree tree = DocumentTree.builder()
+                .children(new java.util.ArrayList<>(List.of(node))).build();
+        when(objectMapper.readValue(document.getContent(), DocumentTree.class)).thenReturn(tree);
+        when(objectMapper.writeValueAsString(any())).thenReturn("{\"children\":[]}");
+
+        SubmitOperationRequest request = new SubmitOperationRequest(
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
+
+        service.submitOperation(documentId, request, attrsWithSession);
+
+        ArgumentCaptor<AcceptedOperationDomainEvent> captor =
+                ArgumentCaptor.forClass(AcceptedOperationDomainEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        AcceptedOperationDomainEvent published = captor.getValue();
+        assertThat(published.response().operationId()).isEqualTo(operationId);
+        assertThat(published.response().documentId()).isEqualTo(documentId);
+        assertThat(published.response().serverVersion()).isEqualTo(1L);
+        assertThat(published.baseVersion()).isEqualTo(0L);
+    }
+
+    @Test
+    void submitOperationDoesNotPublishDomainEventForIdempotentDuplicate() throws Exception {
+        JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
+        when(currentUserProvider.requireCurrentUser(sessionAttributes)).thenReturn(actor);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
+                .thenReturn(Optional.of(DocumentOperation.builder()
+                        .operationId(operationId).serverVersion(1L)
+                        .operationType(DocumentOperationType.INSERT_TEXT)
+                        .payload("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}")
+                        .clientSessionId("sess-1").createdAt(Instant.now())
+                        .document(document).actor(actor).baseVersion(0L).build()));
+        when(objectMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}"))
+                .thenReturn(realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}"));
+
+        SubmitOperationRequest request = new SubmitOperationRequest(
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload);
+
+        service.submitOperation(documentId, request, sessionAttributes);
+
+        verify(eventPublisher, never()).publishEvent(any());
     }
 }
