@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.test.context.ActiveProfiles;
@@ -29,7 +29,7 @@ class KafkaAcceptedOperationIntegrationTest {
     @Autowired
     private KafkaTemplate<String, String> kafkaTemplate;
 
-    @SpyBean
+    @MockitoSpyBean
     private KafkaOperationNotificationConsumer consumer;
 
     @Autowired
