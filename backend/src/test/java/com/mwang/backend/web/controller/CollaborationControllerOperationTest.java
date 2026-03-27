@@ -2,6 +2,7 @@ package com.mwang.backend.web.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.service.CollaborationBroadcastService;
 import com.mwang.backend.service.CollaborationPresenceService;
 import com.mwang.backend.service.CollaborationSessionService;
@@ -34,17 +35,20 @@ class CollaborationControllerOperationTest {
     private CollaborationController controller;
     private DocumentOperationService operationService;
     private CollaborationBroadcastService broadcastService;
+    private RedisCollaborationEventPublisher redisPublisher;
     private ObjectMapper mapper;
 
     @BeforeEach
     void setUp() {
         operationService = mock(DocumentOperationService.class);
         broadcastService = mock(CollaborationBroadcastService.class);
+        redisPublisher = mock(RedisCollaborationEventPublisher.class);
         controller = new CollaborationController(
                 mock(CollaborationSessionService.class),
                 mock(CollaborationPresenceService.class),
                 broadcastService,
-                operationService);
+                operationService,
+                redisPublisher);
         mapper = new ObjectMapper();
     }
 
@@ -67,6 +71,7 @@ class CollaborationControllerOperationTest {
 
         verify(operationService).submitOperation(eq(documentId), eq(request), any());
         verify(broadcastService).broadcastAcceptedOperation(documentId, response);
+        verify(redisPublisher).publishAcceptedOperation(documentId, response);
     }
 
     @Test
@@ -83,7 +88,7 @@ class CollaborationControllerOperationTest {
 
         assertThatThrownBy(() -> controller.submitOperation(documentId, request, accessor))
                 .isInstanceOf(DocumentAccessDeniedException.class);
-        verifyNoInteractions(broadcastService);
+        verifyNoInteractions(broadcastService, redisPublisher);
     }
 
     @Test
@@ -100,6 +105,7 @@ class CollaborationControllerOperationTest {
 
         assertThatThrownBy(() -> controller.submitOperation(documentId, request, accessor))
                 .isInstanceOf(InvalidOperationException.class);
+        verifyNoInteractions(broadcastService, redisPublisher);
     }
 
     @Test
@@ -116,6 +122,6 @@ class CollaborationControllerOperationTest {
 
         assertThatThrownBy(() -> controller.submitOperation(documentId, request, accessor))
                 .isInstanceOf(OperationConflictException.class);
-        verifyNoInteractions(broadcastService);
+        verifyNoInteractions(broadcastService, redisPublisher);
     }
 }
