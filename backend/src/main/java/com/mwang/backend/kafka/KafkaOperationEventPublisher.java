@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.concurrent.ExecutionException;
+
 @Component
 public class KafkaOperationEventPublisher {
 
@@ -60,14 +62,21 @@ public class KafkaOperationEventPublisher {
         String key = response.documentId().toString();
         retryTemplate.execute(
                 ctx -> {
-                    kafkaTemplate.send(operationsTopic, key, payload);
+                    try {
+                        kafkaTemplate.send(operationsTopic, key, payload).get();
+                    } catch (ExecutionException e) {
+                        throw new RuntimeException(e.getCause() != null ? e.getCause() : e);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(e);
+                    }
                     return null;
                 },
                 ctx -> {
                     log.warn("[KAFKA] Failed to publish accepted operation after retries: " +
                                     "documentId={} operationId={} attempts={} error={}",
                             response.documentId(), response.operationId(),
-                            ctx.getRetryCount() + 1,
+                            ctx.getRetryCount(),
                             ctx.getLastThrowable() != null ? ctx.getLastThrowable().getMessage() : "unknown");
                     return null;
                 }
