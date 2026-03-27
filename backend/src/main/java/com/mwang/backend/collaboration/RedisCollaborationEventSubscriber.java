@@ -40,10 +40,24 @@ public class RedisCollaborationEventSubscriber implements MessageListener {
         }
     }
 
+    public void onMessage(RedisAcceptedOperationEvent event) {
+        if (event == null || collaborationInstanceId.equals(event.publisherInstanceId())) {
+            return;
+        }
+        collaborationBroadcastService.broadcastAcceptedOperation(
+                event.payload().documentId(), event.payload());
+    }
+
     @Override
     public void onMessage(Message message, byte[] pattern) {
         try {
-            onMessage(objectMapper.readValue(new String(message.getBody(), StandardCharsets.UTF_8), RedisCollaborationEvent.class));
+            String channel = new String(message.getChannel(), StandardCharsets.UTF_8);
+            String body = new String(message.getBody(), StandardCharsets.UTF_8);
+            if (RedisCollaborationChannels.EVENTS.equals(channel)) {
+                onMessage(objectMapper.readValue(body, RedisCollaborationEvent.class));
+            } else {
+                onMessage(objectMapper.readValue(body, RedisAcceptedOperationEvent.class));
+            }
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to consume collaboration event", exception);
         }
