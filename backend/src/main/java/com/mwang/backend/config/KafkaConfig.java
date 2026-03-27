@@ -3,7 +3,9 @@ package com.mwang.backend.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.retry.support.RetryTemplate;
+import org.springframework.scheduling.annotation.EnableAsync;
 
+@EnableAsync
 @Configuration
 public class KafkaConfig {
 
