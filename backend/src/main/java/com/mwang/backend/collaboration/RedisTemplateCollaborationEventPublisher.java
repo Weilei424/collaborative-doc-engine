@@ -50,7 +50,13 @@ public class RedisTemplateCollaborationEventPublisher implements RedisCollaborat
 
     @Override
     public void publishAcceptedOperation(UUID documentId, AcceptedOperationResponse response) {
-        // Phase 5 will implement Redis cross-instance fanout here
+        try {
+            redisTemplate.convertAndSend(
+                    RedisCollaborationChannels.documentOperations(documentId),
+                    objectMapper.writeValueAsString(new RedisAcceptedOperationEvent(collaborationInstanceId, response)));
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Failed to publish accepted operation event", exception);
+        }
     }
 
     private void publish(RedisCollaborationEvent event) {
