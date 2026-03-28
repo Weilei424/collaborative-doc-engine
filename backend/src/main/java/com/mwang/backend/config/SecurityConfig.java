@@ -1,5 +1,6 @@
 package com.mwang.backend.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mwang.backend.service.HeaderCurrentUserProvider;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -15,9 +16,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final HeaderCurrentUserProvider userProvider;
+    private final ObjectMapper objectMapper;
 
-    public SecurityConfig(HeaderCurrentUserProvider userProvider) {
+    public SecurityConfig(HeaderCurrentUserProvider userProvider, ObjectMapper objectMapper) {
         this.userProvider = userProvider;
+        this.objectMapper = objectMapper;
     }
 
     @Bean
@@ -30,7 +33,7 @@ public class SecurityConfig {
             .exceptionHandling(ex -> ex.authenticationEntryPoint(
                 (request, response, authException) ->
                     response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized")))
-            .addFilterBefore(new UserIdAuthenticationFilter(userProvider),
+            .addFilterBefore(new UserIdAuthenticationFilter(userProvider, objectMapper),
                              UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
