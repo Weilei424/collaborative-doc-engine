@@ -10,12 +10,14 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.UUID;
 
 public class UserIdAuthenticationFilter extends OncePerRequestFilter {
 
@@ -42,7 +44,14 @@ public class UserIdAuthenticationFilter extends OncePerRequestFilter {
             UsernamePasswordAuthenticationToken auth =
                     new UsernamePasswordAuthenticationToken(user, null, List.of());
             SecurityContextHolder.getContext().setAuthentication(auth);
-            filterChain.doFilter(request, response);
+            MDC.put("userId", user.getId().toString());
+            MDC.put("requestId", UUID.randomUUID().toString());
+            try {
+                filterChain.doFilter(request, response);
+            } finally {
+                MDC.remove("userId");
+                MDC.remove("requestId");
+            }
         } catch (UserNotFoundException e) {
             SecurityContextHolder.clearContext();
             writeError(response, HttpServletResponse.SC_BAD_REQUEST, "USER_NOT_FOUND", e.getMessage());
