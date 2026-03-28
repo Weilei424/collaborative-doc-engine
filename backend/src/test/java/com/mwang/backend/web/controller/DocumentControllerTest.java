@@ -14,6 +14,7 @@ import com.mwang.backend.web.model.DocumentOwnerSummary;
 import com.mwang.backend.web.model.DocumentPagedList;
 import com.mwang.backend.web.model.DocumentResponse;
 import com.mwang.backend.web.model.UpdateDocumentRequest;
+import com.mwang.backend.config.TestSecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(DocumentController.class)
-@Import(RestExceptionHandler.class)
+@Import({RestExceptionHandler.class, TestSecurityConfig.class})
 class DocumentControllerTest {
 
     @Autowired
