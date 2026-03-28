@@ -1,5 +1,7 @@
 package com.mwang.backend.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.service.HeaderCurrentUserProvider;
 import com.mwang.backend.service.exception.UserContextRequiredException;
@@ -10,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -31,7 +34,8 @@ class UserIdAuthenticationFilterTest {
 
     @BeforeEach
     void setUp() {
-        filter = new UserIdAuthenticationFilter(userProvider);
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        filter = new UserIdAuthenticationFilter(userProvider, objectMapper);
         SecurityContextHolder.clearContext();
     }
 
@@ -58,35 +62,44 @@ class UserIdAuthenticationFilterTest {
     }
 
     @Test
-    void doesNotSetAuthenticationWhenHeaderMissing() throws Exception {
+    void returns400WithUserContextRequiredWhenHeaderMissing() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
 
-        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+        filter.doFilter(request, response, new MockFilterChain());
 
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getContentAsString()).contains("USER_CONTEXT_REQUIRED");
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
-    void doesNotSetAuthenticationWhenUserNotFound() throws Exception {
+    void returns400WithUserNotFoundWhenUserDoesNotExist() throws Exception {
         UUID userId = UUID.randomUUID();
         MockHttpServletRequest request = new MockHttpServletRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
         request.addHeader("X-User-Id", userId.toString());
         when(userProvider.requireCurrentUser()).thenThrow(new UserNotFoundException(userId));
 
-        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+        filter.doFilter(request, response, new MockFilterChain());
 
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getContentAsString()).contains("USER_NOT_FOUND");
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
-    void doesNotSetAuthenticationWhenUserIdIsInvalidUuid() throws Exception {
+    void returns400WithUserContextRequiredWhenUserIdIsInvalidUuid() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
         request.addHeader("X-User-Id", "not-a-uuid");
         when(userProvider.requireCurrentUser())
                 .thenThrow(new UserContextRequiredException("X-User-Id context must be a valid UUID"));
 
-        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+        filter.doFilter(request, response, new MockFilterChain());
 
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getContentAsString()).contains("USER_CONTEXT_REQUIRED");
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 }
