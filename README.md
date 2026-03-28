@@ -1,112 +1,111 @@
-# collaborative-doc-engine
+# Collaborative Document Engine
 
+## Project Overview
 
-A high-performance, distributed backend system for real-time collaborative document editing.
-
-Built to demonstrate:
-
-- Distributed systems fundamentals  
-- Concurrency control (OT / CRDT concepts)  
-- Event-driven architecture  
-- Horizontal scalability  
-- Cloud-native design patterns  
+A real-time collaborative document editing backend that solves the multi-user concurrent editing problem through server-authoritative operational transformation. Multiple clients can edit the same document simultaneously; the server serializes all operations, resolves conflicts, and fans out accepted operations to all connected instances. This project is a portfolio and interview reference implementation demonstrating horizontally scalable backend design with Spring Boot.
 
 ---
 
-## 🚀 Overview
+## Architecture Overview
 
-This project implements a scalable backend that enables multiple users to edit the same document concurrently with low latency and strong consistency guarantees.
+| Component | Role |
+|---|---|
+| PostgreSQL | Source of truth: documents, operation history, ACL state |
+| Flyway | Schema lifecycle owner |
+| Redis Pub/Sub | Low-latency accepted-operation fanout and presence coordination between instances |
+| Kafka | Durable event stream: audit, replay, analytics, async consumers |
+| STOMP/WebSocket | Client collaboration transport |
+| Spring Security | Request authentication via `X-User-Id` filter (JWT upgrade path noted) |
 
-It is designed to simulate production-level collaborative systems (e.g., Google Docs-style editing) using:
+### Multi-instance collaboration flow
 
-- **Spring Boot** – REST API & application framework  
-- **PostgreSQL** – Durable document storage  
-- **Redis (Pub/Sub + Cache)** – Real-time state propagation  
-- **Kafka** – Event streaming & asynchronous processing  
-- **Flyway** – Schema versioning & migrations  
-
----
-
-## 🏗 Architecture
-
-<p align="center">
-  <img src="docs/architecture.svg" width="800"/>
-</p>
-
----
-
-## 🧠 Edit Flow (End-to-End)
-
-1. Client sends an edit operation to backend.
-2. Backend:
-   - Validates document version
-   - Applies OT/CRDT transformation logic
-   - Persists updated state in PostgreSQL
-   - Updates Redis cache
-   - Publishes update to Redis Pub/Sub channel
-   - Emits event to Kafka for async consumers
-3. Other connected clients receive the update in real-time.
+1. Client connects to any backend instance and joins a document channel
+2. Client submits an operation with `operationId`, `baseVersion`, and typed payload
+3. Instance validates ACL, acquires pessimistic lock on the document row
+4. Instance checks idempotency, transforms against any intervening ops if needed
+5. Accepted operation and updated document projection are persisted transactionally
+6. Accepted operation published to Redis (all instances fan out to local WebSocket clients)
+7. Accepted operation published to Kafka (durable, replayable, async consumers)
 
 ---
 
-## 🔄 Concurrency Model
+## API Surface
 
-### Why OT + CRDT Concepts?
+### REST Endpoints
 
-The system explores hybrid concurrency strategies:
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/documents` | Create a new document |
+| `GET` | `/api/documents` | List documents accessible to the authenticated user |
+| `GET` | `/api/documents/{id}` | Get a document by ID |
+| `PUT` | `/api/documents/{id}` | Update document metadata |
+| `DELETE` | `/api/documents/{id}` | Delete a document |
+| `GET` | `/api/documents/{documentId}/collaborators` | List collaborators |
+| `POST` | `/api/documents/{documentId}/collaborators` | Add a collaborator |
+| `PUT` | `/api/documents/{documentId}/collaborators/{userId}` | Update collaborator role |
+| `DELETE` | `/api/documents/{documentId}/collaborators/{userId}` | Remove a collaborator |
+| `PUT` | `/api/documents/{documentId}/collaborators/owner` | Transfer document ownership |
 
-- **Operational Transformation (OT)**  
-  Used to transform concurrent operations against a shared base version.
+All requests require an `X-User-Id` header containing a valid user UUID.
 
-- **CRDT Concepts**  
-  Used to guarantee convergence across distributed instances.
+### STOMP Destinations
 
-### Multi-Instance Behavior
+**Send (client → server):**
 
-Each backend instance:
+| Destination | Description |
+|---|---|
+| `/app/documents/{documentId}/sessions.join` | Join a document collaboration session |
+| `/app/documents/{documentId}/sessions.leave` | Leave a document collaboration session |
+| `/app/documents/{documentId}/presence.update` | Broadcast cursor/presence update |
+| `/app/documents/{documentId}/operations.submit` | Submit an edit operation |
 
-- Subscribes to Redis channels for document updates  
-- Publishes edits to the same channel  
-- Acts as both publisher and subscriber  
+**Subscribe (server → client):**
 
-This allows:
-
-- Horizontal scaling  
-- Real-time synchronization across instances  
-- Low-latency fan-out updates  
-- Eventual consistency across nodes  
-
----
-
-## ⚡ Performance Strategy
-
-To achieve real-time performance:
-
-- Redis stores active document state
-- PostgreSQL is optimized with indexing
-- Kafka decouples heavy processing
-- Asynchronous handling reduces request blocking
-- Stateless service design enables horizontal scaling
-
-Primary latency sources:
-
-- Database write time  
-- Network round-trip  
-- Version conflict resolution  
-- Inter-instance propagation delay  
+| Topic | Description |
+|---|---|
+| `/topic/documents/{documentId}/sessions` | Session snapshot on join/leave |
+| `/topic/documents/{documentId}/presence` | Presence events (cursor positions) |
+| `/topic/documents/{documentId}/operations` | Accepted operation broadcasts |
 
 ---
 
-## 🗄 Database Migrations (Flyway)
+## Local Startup
 
-Flyway is used alongside Spring Data JPA to:
-
-- Version-control schema changes  
-- Ensure deterministic migrations  
-- Support CI/CD pipelines  
-- Prevent schema drift in distributed deployments  
+1. **Prerequisites:** Java 17, Docker
+2. Start infrastructure:
+   ```
+   docker compose up -d
+   ```
+3. Start the application:
+   ```
+   cd backend && ./mvnw spring-boot:run
+   ```
+4. Verify:
+   ```
+   curl http://localhost:8080/actuator/health
+   ```
 
 ---
 
+## Running Tests
+
+```
+cd backend
+./mvnw test
+```
+
+Note: `RedisAcceptedOperationFanoutTest` is skipped without Docker (`@Testcontainers(disabledWithoutDocker = true)`).
 
 ---
+
+## Design Decisions
+
+- **Server-authoritative OT over CRDT** — deterministic server ordering keeps the conflict path simple and auditable; CRDT generality is not needed for the MVP operation set.
+
+- **Pessimistic lock for version slot assignment** — `SELECT FOR UPDATE` on the document row serializes concurrent submits without optimistic retry loops; correct for a write-heavy collaboration path.
+
+- **Redis vs Kafka responsibility split** — Redis for speed (sub-millisecond fanout, presence), Kafka for durability (replay, audit, downstream consumers); no overlap.
+
+- **H2 in tests, Postgres in production** — keeps the test suite fast and self-contained; schema validated by Flyway on both; Testcontainers deferred due to local Docker constraints.
+
+- **`X-User-Id` header identity** — pragmatic for portfolio/interview demonstration; the deferred upgrade path to JWT is noted in `BACKLOG.md`.
