@@ -1,8 +1,11 @@
 package com.mwang.backend.web.controller;
 
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
+import com.mwang.backend.service.exception.CollaboratorAlreadyExistsException;
+import com.mwang.backend.service.exception.CollaboratorNotFoundException;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
 import com.mwang.backend.service.exception.DocumentNotFoundException;
+import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
 import com.mwang.backend.service.exception.InvalidDocumentRequestException;
 import com.mwang.backend.service.exception.InvalidDocumentScopeException;
 import com.mwang.backend.service.exception.InvalidOperationException;
@@ -58,6 +61,24 @@ public class RestExceptionHandler {
     @ExceptionHandler(OperationConflictException.class)
     public ResponseEntity<ApiErrorResponse> handleOperationConflict(OperationConflictException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiErrorResponse.of("OPERATION_CONFLICT", ex.getMessage()));
+    }
+
+    @ExceptionHandler(CollaboratorNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleCollaboratorNotFound(CollaboratorNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiErrorResponse.of("COLLABORATOR_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(CollaboratorAlreadyExistsException.class)
+    public ResponseEntity<ApiErrorResponse> handleCollaboratorAlreadyExists(CollaboratorAlreadyExistsException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiErrorResponse.of("COLLABORATOR_ALREADY_EXISTS", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidCollaborationRequestException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidCollaborationRequest(InvalidCollaborationRequestException ex) {
+        return ResponseEntity.badRequest()
+                .body(ApiErrorResponse.of("INVALID_COLLABORATION_REQUEST", ex.getMessage()));
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, ConstraintViolationException.class, InvalidDocumentRequestException.class, HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
