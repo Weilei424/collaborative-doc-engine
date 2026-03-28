@@ -89,6 +89,19 @@ class UserIdAuthenticationFilterTest {
     }
 
     @Test
+    void actuatorRequestsPassThroughWithoutXUserIdHeader() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRequestURI("/actuator/health");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.OK.value());
+        assertThat(chain.getRequest()).isNotNull();
+    }
+
+    @Test
     void returns400WithUserContextRequiredWhenUserIdIsInvalidUuid() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
