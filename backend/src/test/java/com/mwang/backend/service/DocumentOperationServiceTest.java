@@ -13,15 +13,20 @@ import com.mwang.backend.kafka.AcceptedOperationDomainEvent;
 import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
+import com.mwang.backend.service.exception.DocumentNotFoundException;
 import com.mwang.backend.service.exception.InvalidOperationException;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.SubmitOperationRequest;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -49,6 +54,8 @@ class DocumentOperationServiceTest {
     @Mock private OperationTransformer transformer;
     @Mock private ObjectMapper objectMapper;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private EntityManager entityManager;
+    @Spy private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @InjectMocks
     private DocumentOperationServiceImpl service;
@@ -288,5 +295,32 @@ class DocumentOperationServiceTest {
         service.submitOperation(documentId, request, sessionAttributes);
 
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void submitOperation_documentNotFound_throwsBeforeAuthOrLock() throws Exception {
+        when(documentRepository.findById(documentId)).thenReturn(Optional.empty());
+
+        SubmitOperationRequest request = new SubmitOperationRequest(
+                operationId, 0L, DocumentOperationType.INSERT_TEXT,
+                realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}"));
+
+        assertThatThrownBy(() -> service.submitOperation(documentId, request, sessionAttributes))
+                .isInstanceOf(DocumentNotFoundException.class);
+        verify(authorizationService, never()).assertCanWrite(any(), any());
+        verify(documentRepository, never()).findByIdWithPessimisticLock(any());
+    }
+
+    @Test
+    void submitOperation_nullOperationType_throwsInvalidOperationException() {
+        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        SubmitOperationRequest request = new SubmitOperationRequest(
+                operationId, 0L, null,
+                realMapper.createObjectNode().put("path", "ignored"));
+
+        assertThatThrownBy(() -> service.submitOperation(documentId, request, sessionAttributes))
+                .isInstanceOf(InvalidOperationException.class)
+                .hasMessageContaining("Operation type");
+        verify(documentRepository, never()).findById(any());
     }
 }
