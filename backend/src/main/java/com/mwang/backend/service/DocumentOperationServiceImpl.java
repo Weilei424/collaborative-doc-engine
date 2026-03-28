@@ -16,6 +16,9 @@ import com.mwang.backend.service.exception.DocumentNotFoundException;
 import com.mwang.backend.service.exception.InvalidOperationException;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.SubmitOperationRequest;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.persistence.EntityManager;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +39,11 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     private final OperationTransformer transformer;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final EntityManager entityManager;
+    private final Counter conflictedCounter;
+    private final Counter noopCounter;
+    private final Counter idempotentCounter;
+    private final MeterRegistry meterRegistry;
 
     public DocumentOperationServiceImpl(
             DocumentRepository documentRepository,
@@ -44,7 +52,9 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             DocumentAuthorizationService authorizationService,
             OperationTransformer transformer,
             ObjectMapper objectMapper,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            EntityManager entityManager,
+            MeterRegistry meterRegistry) {
         this.documentRepository = documentRepository;
         this.operationRepository = operationRepository;
         this.currentUserProvider = currentUserProvider;
@@ -52,6 +62,11 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         this.transformer = transformer;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
+        this.entityManager = entityManager;
+        this.meterRegistry = meterRegistry;
+        this.conflictedCounter = meterRegistry.counter("operations.conflicted");
+        this.noopCounter = meterRegistry.counter("operations.noop");
+        this.idempotentCounter = meterRegistry.counter("operations.idempotent");
     }
 
     @Override
@@ -74,10 +89,17 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         Optional<DocumentOperation> existingOpt = operationRepository
                 .findByDocumentIdAndOperationId(documentId, request.operationId());
         if (existingOpt.isPresent()) {
+            idempotentCounter.increment();
             return toResponse(existingOpt.get(), documentId);
         }
 
-        // 5. Acquire pessimistic lock for new operation
+        // 5. Acquire pessimistic lock for new operation.
+        // Evict the document from the L1 session cache before locking so that Hibernate
+        // re-reads a fresh copy from the DB (including the current @Version value).
+        // Without this, a concurrent commit between the non-locking findById above and
+        // this lock acquisition will cause Hibernate to detect a stale @Version on the
+        // cached entity and throw ObjectOptimisticLockingFailureException.
+        entityManager.detach(document);
         document = documentRepository.findByIdWithPessimisticLock(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
@@ -91,12 +113,16 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         //     the unique constraint instead of returning the original accepted response.
         existingOpt = operationRepository.findByDocumentIdAndOperationId(documentId, request.operationId());
         if (existingOpt.isPresent()) {
+            idempotentCounter.increment();
             return toResponse(existingOpt.get(), documentId);
         }
 
         // 6. Load intervening operations (document is already locked by pessimistic write)
         List<DocumentOperation> intervening = operationRepository
                 .findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(documentId, request.baseVersion());
+        if (!intervening.isEmpty()) {
+            conflictedCounter.increment();
+        }
 
         // 7. Transform incoming op against each intervening op in order (short-circuit on no-op)
         DocumentOperationType currentType = request.operationType();
@@ -111,6 +137,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             Optional<JsonNode> transformed = transformer.transform(
                     currentType, currentPayload, accepted.getOperationType(), acceptedPayload);
             if (transformed.isEmpty()) {
+                noopCounter.increment();
                 currentType = DocumentOperationType.NO_OP;
                 currentPayload = objectMapper.createObjectNode();
                 break;
@@ -148,6 +175,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         operationRepository.save(accepted);
         document.setCurrentVersion(nextVersion);
         documentRepository.save(document);
+        meterRegistry.counter("operations.accepted", "type", currentType.name()).increment();
 
         AcceptedOperationResponse acceptedResponse = new AcceptedOperationResponse(
                 request.operationId(), documentId, nextVersion,
@@ -160,6 +188,9 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     }
 
     private void validatePayload(DocumentOperationType type, JsonNode payload) {
+        if (type == null) {
+            throw new InvalidOperationException("Operation type is required");
+        }
         if (payload == null || payload.isNull()) {
             throw new InvalidOperationException("Payload is required");
         }
