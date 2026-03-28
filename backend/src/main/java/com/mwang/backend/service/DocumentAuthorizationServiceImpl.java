@@ -36,6 +36,14 @@ public class DocumentAuthorizationServiceImpl implements DocumentAuthorizationSe
     }
 
     @Override
+    public void assertCanAdmin(Document document, User actor) {
+        if (isOwner(document, actor)) return;
+        DocumentCollaborator collaborator = collaboratorEntry(document, actor);
+        if (collaborator != null && collaborator.getPermission().ordinal() >= DocumentPermission.ADMIN.ordinal()) return;
+        throw new DocumentAccessDeniedException(document.getId(), actor.getId());
+    }
+
+    @Override
     public String resolveEffectivePermission(Document document, User actor) {
         if (isOwner(document, actor)) {
             return "OWNER";
