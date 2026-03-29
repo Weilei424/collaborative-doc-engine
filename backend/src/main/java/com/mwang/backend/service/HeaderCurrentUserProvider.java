@@ -6,16 +6,16 @@ import com.mwang.backend.service.exception.UserContextRequiredException;
 import com.mwang.backend.service.exception.UserNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.messaging.simp.SimpAttributes;
-import org.springframework.messaging.simp.SimpAttributesContextHolder;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Component;
-import org.springframework.web.context.request.RequestAttributes;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * @deprecated Replaced by {@link SecurityContextCurrentUserProvider}. Retained for backward compatibility.
+ */
+@Deprecated
 @Component
 @RequiredArgsConstructor
 public class HeaderCurrentUserProvider implements CurrentUserProvider {
@@ -25,74 +25,43 @@ public class HeaderCurrentUserProvider implements CurrentUserProvider {
     private final UserRepository userRepository;
 
     @Override
-    public User requireCurrentUser() {
-        String rawUserId = trimToNull(extractUserIdFromMessagingSession());
-        if (rawUserId != null) {
-            return requireUser(rawUserId);
-        }
-
-        rawUserId = trimToNull(extractUserIdFromHttpRequest());
-        if (rawUserId != null) {
-            return requireUser(rawUserId);
-        }
-
-        throw new UserContextRequiredException("X-User-Id header or STOMP session context is required");
-    }
-
-    public User requireCurrentUserFromSessionAttributes(Map<String, Object> sessionAttributes) {
-        String rawUserId = trimToNull(extractUserIdFromSessionAttributes(sessionAttributes));
+    public User requireCurrentUser(HttpServletRequest request) {
+        String rawUserId = trimToNull(request.getHeader(USER_ID_HEADER));
         if (rawUserId == null) {
-            throw new UserContextRequiredException("X-User-Id STOMP session context is required");
+            throw new UserContextRequiredException("X-User-Id header is required");
         }
-
         return requireUser(rawUserId);
     }
 
+    @Override
+    public User requireCurrentUser(SimpMessageHeaderAccessor headerAccessor) {
+        Map<String, Object> attrs = headerAccessor.getSessionAttributes();
+        if (attrs == null) {
+            throw new UserContextRequiredException("X-User-Id STOMP session context is required");
+        }
+        Object rawUserId = attrs.get(USER_ID_HEADER);
+        if (rawUserId == null) {
+            throw new UserContextRequiredException("X-User-Id STOMP session context is required");
+        }
+        return requireUser(trimToNull(rawUserId.toString()));
+    }
+
     private User requireUser(String rawUserId) {
+        if (rawUserId == null) {
+            throw new UserContextRequiredException("X-User-Id context must be a valid UUID");
+        }
         UUID userId;
         try {
             userId = UUID.fromString(rawUserId);
         } catch (IllegalArgumentException ex) {
             throw new UserContextRequiredException("X-User-Id context must be a valid UUID");
         }
-
         return userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
     }
 
-    private String extractUserIdFromHttpRequest() {
-        RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
-        if (!(attributes instanceof ServletRequestAttributes servletAttributes)) {
-            return null;
-        }
-
-        HttpServletRequest request = servletAttributes.getRequest();
-        return request.getHeader(USER_ID_HEADER);
-    }
-
-    private String extractUserIdFromMessagingSession() {
-        SimpAttributes attributes = SimpAttributesContextHolder.getAttributes();
-        if (attributes == null) {
-            return null;
-        }
-
-        Object rawUserId = attributes.getAttribute(USER_ID_HEADER);
-        return rawUserId == null ? null : rawUserId.toString();
-    }
-
-    private String extractUserIdFromSessionAttributes(Map<String, Object> sessionAttributes) {
-        if (sessionAttributes == null) {
-            return null;
-        }
-
-        Object rawUserId = sessionAttributes.get(USER_ID_HEADER);
-        return rawUserId == null ? null : rawUserId.toString();
-    }
-
     private String trimToNull(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
+        if (value == null || value.isBlank()) return null;
         return value.trim();
     }
 }
