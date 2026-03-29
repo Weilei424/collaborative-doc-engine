@@ -18,14 +18,18 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * Proves that a valid JWT Bearer token passes through the full MVC security stack
- * (JwtAuthenticationFilter → SecurityContextHolder → controller) and that requests
- * without a token are rejected with 401.
+ * (JwtAuthenticationFilter → SecurityContextHolder → controller).
+ *
+ * Principal consumption by service-layer code is covered at the unit level by:
+ *   - JwtAuthenticationFilterTest: proves token → SecurityContextHolder
+ *   - SecurityContextCurrentUserProviderTest: proves SecurityContextHolder → User
  */
 @WebMvcTest(DocumentController.class)
 @Import({SecurityConfig.class, JwtAuthenticationFilter.class, RestExceptionHandler.class})
@@ -50,6 +54,9 @@ class JwtAuthenticationIntegrationTest {
         mockMvc.perform(get("/api/documents")
                         .header("Authorization", "Bearer valid-token"))
                 .andExpect(status().isOk());
+
+        // Confirms the request reached the service, not just that it passed the security layer.
+        verify(documentService).list(any(), any(), any(), any());
     }
 
     @Test
