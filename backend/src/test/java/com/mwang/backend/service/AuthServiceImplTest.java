@@ -41,7 +41,7 @@ class AuthServiceImplTest {
         User saved = new User();
         saved.setId(UUID.randomUUID());
         saved.setUsername("alice");
-        when(userRepository.save(any())).thenReturn(saved);
+        when(userRepository.saveAndFlush(any())).thenReturn(saved);
         when(jwtService.generateToken(saved)).thenReturn("jwt-token");
 
         AuthResponse response = authService.register(
@@ -74,7 +74,7 @@ class AuthServiceImplTest {
         when(userRepository.existsByUsername("alice")).thenReturn(false, true);
         when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
         when(passwordEncoder.encode(any())).thenReturn("hashed");
-        when(userRepository.save(any())).thenThrow(new DataIntegrityViolationException("duplicate key: username"));
+        when(userRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("duplicate key: username"));
 
         assertThatThrownBy(() -> authService.register(
                 new RegisterRequest("alice", "alice@example.com", "secret")))
@@ -86,7 +86,7 @@ class AuthServiceImplTest {
         when(userRepository.existsByUsername("alice")).thenReturn(false);
         when(userRepository.existsByEmail("alice@example.com")).thenReturn(false, true);
         when(passwordEncoder.encode(any())).thenReturn("hashed");
-        when(userRepository.save(any())).thenThrow(new DataIntegrityViolationException("duplicate key: email"));
+        when(userRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("duplicate key: email"));
 
         assertThatThrownBy(() -> authService.register(
                 new RegisterRequest("alice", "alice@example.com", "secret")))
