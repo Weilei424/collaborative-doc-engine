@@ -13,5 +13,6 @@ public interface CollaboratorManagementService {
     DocumentCollaboratorSummary addCollaborator(UUID documentId, UUID targetUserId, DocumentPermission permission, HttpServletRequest httpRequest);
     DocumentCollaboratorSummary updateCollaborator(UUID documentId, UUID targetUserId, DocumentPermission permission, HttpServletRequest httpRequest);
     void removeCollaborator(UUID documentId, UUID targetUserId, HttpServletRequest httpRequest);
+    DocumentCollaboratorSummary getCollaborator(UUID documentId, UUID collaboratorUserId, HttpServletRequest httpRequest);
     DocumentResponse transferOwnership(UUID documentId, UUID newOwnerUserId, HttpServletRequest httpRequest);
 }
