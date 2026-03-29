@@ -11,6 +11,7 @@ import com.mwang.backend.service.exception.UsernameAlreadyExistsException;
 import com.mwang.backend.web.model.AuthResponse;
 import com.mwang.backend.web.model.LoginRequest;
 import com.mwang.backend.web.model.RegisterRequest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,7 +46,18 @@ public class AuthServiceImpl implements AuthService {
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setRole(UserRole.USER);
         user.setStatus(UserStatus.ACTIVE);
-        User saved = userRepository.save(user);
+        User saved;
+        try {
+            saved = userRepository.save(user);
+        } catch (DataIntegrityViolationException ex) {
+            if (userRepository.existsByUsername(request.username())) {
+                throw new UsernameAlreadyExistsException(request.username());
+            }
+            if (userRepository.existsByEmail(request.email())) {
+                throw new EmailAlreadyExistsException(request.email());
+            }
+            throw ex;
+        }
         return new AuthResponse(jwtService.generateToken(saved), saved.getId(), saved.getUsername());
     }
 
