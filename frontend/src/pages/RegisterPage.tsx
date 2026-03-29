@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import axios from 'axios'
 import { useAuth } from '../contexts/AuthContext'
 
 export function RegisterPage() {
@@ -17,8 +18,19 @@ export function RegisterPage() {
     try {
       await register(username, email, password)
       navigate('/')
-    } catch {
-      setError('Registration failed — username or email already in use')
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const code = err.response?.data?.error
+        if (code === 'USERNAME_ALREADY_EXISTS') {
+          setError('Username is already taken')
+        } else if (code === 'EMAIL_ALREADY_EXISTS') {
+          setError('Email is already registered')
+        } else {
+          setError('Registration failed - please try again')
+        }
+      } else {
+        setError('Registration failed - please try again')
+      }
     }
   }
 
