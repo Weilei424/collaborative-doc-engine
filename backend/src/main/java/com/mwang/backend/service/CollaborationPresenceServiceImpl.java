@@ -12,6 +12,7 @@ import com.mwang.backend.service.exception.InvalidPresenceUpdateException;
 import com.mwang.backend.web.model.CollaborationSessionResponse;
 import com.mwang.backend.web.model.PresenceEventResponse;
 import com.mwang.backend.web.model.PresenceUpdateRequest;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -41,12 +42,13 @@ public class CollaborationPresenceServiceImpl implements CollaborationPresenceSe
     }
 
     @Override
-    public PresenceEventResponse publishPresence(UUID documentId, PresenceUpdateRequest request, Map<String, Object> sessionAttributes) {
+    public PresenceEventResponse publishPresence(UUID documentId, PresenceUpdateRequest request, SimpMessageHeaderAccessor headerAccessor) {
         if (request == null || request.sessionId() == null || request.type() == null) {
             throw new InvalidPresenceUpdateException("Presence update requires sessionId and type");
         }
 
-        User actor = currentUserProvider.requireCurrentUser(sessionAttributes);
+        User actor = currentUserProvider.requireCurrentUser(headerAccessor);
+        Map<String, Object> sessionAttributes = headerAccessor != null ? headerAccessor.getSessionAttributes() : null;
         Document document = requireDocument(documentId);
         documentAuthorizationService.assertCanRead(document, actor);
 

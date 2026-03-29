@@ -6,6 +6,7 @@ import com.mwang.backend.web.model.DocumentCollaboratorSummary;
 import com.mwang.backend.web.model.DocumentResponse;
 import com.mwang.backend.web.model.TransferOwnershipRequest;
 import com.mwang.backend.web.model.UpdateCollaboratorRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -32,41 +33,45 @@ public class CollaboratorController {
     private final CollaboratorManagementService collaboratorManagementService;
 
     @GetMapping
-    public List<DocumentCollaboratorSummary> listCollaborators(@PathVariable UUID documentId) {
-        return collaboratorManagementService.listCollaborators(documentId);
+    public List<DocumentCollaboratorSummary> listCollaborators(@PathVariable UUID documentId, HttpServletRequest httpRequest) {
+        return collaboratorManagementService.listCollaborators(documentId, httpRequest);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public DocumentCollaboratorSummary addCollaborator(
             @PathVariable UUID documentId,
-            @Valid @RequestBody AddCollaboratorRequest request) {
+            @Valid @RequestBody AddCollaboratorRequest request,
+            HttpServletRequest httpRequest) {
         return collaboratorManagementService.addCollaborator(
-                documentId, request.userId(), request.permission());
+                documentId, request.userId(), request.permission(), httpRequest);
     }
 
     @PutMapping("/{userId}")
     public DocumentCollaboratorSummary updateCollaborator(
             @PathVariable UUID documentId,
             @PathVariable UUID userId,
-            @Valid @RequestBody UpdateCollaboratorRequest request) {
+            @Valid @RequestBody UpdateCollaboratorRequest request,
+            HttpServletRequest httpRequest) {
         return collaboratorManagementService.updateCollaborator(
-                documentId, userId, request.permission());
+                documentId, userId, request.permission(), httpRequest);
     }
 
     @DeleteMapping("/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void removeCollaborator(
             @PathVariable UUID documentId,
-            @PathVariable UUID userId) {
-        collaboratorManagementService.removeCollaborator(documentId, userId);
+            @PathVariable UUID userId,
+            HttpServletRequest httpRequest) {
+        collaboratorManagementService.removeCollaborator(documentId, userId, httpRequest);
     }
 
     @PutMapping("/owner")
     public DocumentResponse transferOwnership(
             @PathVariable UUID documentId,
-            @Valid @RequestBody TransferOwnershipRequest request) {
+            @Valid @RequestBody TransferOwnershipRequest request,
+            HttpServletRequest httpRequest) {
         return collaboratorManagementService.transferOwnership(
-                documentId, request.newOwnerUserId());
+                documentId, request.newOwnerUserId(), httpRequest);
     }
 }

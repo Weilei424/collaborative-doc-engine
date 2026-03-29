@@ -15,6 +15,7 @@ import com.mwang.backend.service.exception.UserNotFoundException;
 import com.mwang.backend.web.mappers.DocumentMapper;
 import com.mwang.backend.web.model.DocumentCollaboratorSummary;
 import com.mwang.backend.web.model.DocumentResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,8 +36,8 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
 
     @Override
     @Transactional(readOnly = true)
-    public List<DocumentCollaboratorSummary> listCollaborators(UUID documentId) {
-        User actor = currentUserProvider.requireCurrentUser();
+    public List<DocumentCollaboratorSummary> listCollaborators(UUID documentId, HttpServletRequest httpRequest) {
+        User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document document = requireDocument(documentId);
         authorizationService.assertCanRead(document, actor);
         return document.getCollaborators().stream()
@@ -48,8 +49,8 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
     @Override
     @Transactional
     public DocumentCollaboratorSummary addCollaborator(
-            UUID documentId, UUID targetUserId, DocumentPermission permission) {
-        User actor = currentUserProvider.requireCurrentUser();
+            UUID documentId, UUID targetUserId, DocumentPermission permission, HttpServletRequest httpRequest) {
+        User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document document = requireDocument(documentId);
         authorizationService.assertCanAdmin(document, actor);
 
@@ -74,8 +75,8 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
     @Override
     @Transactional
     public DocumentCollaboratorSummary updateCollaborator(
-            UUID documentId, UUID targetUserId, DocumentPermission permission) {
-        User actor = currentUserProvider.requireCurrentUser();
+            UUID documentId, UUID targetUserId, DocumentPermission permission, HttpServletRequest httpRequest) {
+        User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document document = requireDocument(documentId);
         authorizationService.assertCanAdmin(document, actor);
 
@@ -90,8 +91,8 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
 
     @Override
     @Transactional
-    public void removeCollaborator(UUID documentId, UUID targetUserId) {
-        User actor = currentUserProvider.requireCurrentUser();
+    public void removeCollaborator(UUID documentId, UUID targetUserId, HttpServletRequest httpRequest) {
+        User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document document = requireDocument(documentId);
         authorizationService.assertCanAdmin(document, actor);
 
@@ -106,8 +107,8 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
 
     @Override
     @Transactional
-    public DocumentResponse transferOwnership(UUID documentId, UUID newOwnerUserId) {
-        User actor = currentUserProvider.requireCurrentUser();
+    public DocumentResponse transferOwnership(UUID documentId, UUID newOwnerUserId, HttpServletRequest httpRequest) {
+        User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document document = requireDocument(documentId);
         authorizationService.assertOwner(document, actor);
 

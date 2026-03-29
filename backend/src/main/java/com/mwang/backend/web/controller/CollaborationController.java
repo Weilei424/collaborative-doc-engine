@@ -17,7 +17,6 @@ import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Controller;
 
-import java.util.Map;
 import java.util.UUID;
 
 @RequiredArgsConstructor
@@ -36,7 +35,7 @@ public class CollaborationController {
             SimpMessageHeaderAccessor headerAccessor) {
         collaborationBroadcastService.broadcastSessionSnapshot(
                 documentId,
-                collaborationSessionService.join(documentId, sessionAttributes(headerAccessor))
+                collaborationSessionService.join(documentId, headerAccessor)
         );
     }
 
@@ -47,7 +46,7 @@ public class CollaborationController {
             SimpMessageHeaderAccessor headerAccessor) {
         collaborationBroadcastService.broadcastSessionSnapshot(
                 documentId,
-                collaborationSessionService.leave(documentId, requireSessionId(request), sessionAttributes(headerAccessor))
+                collaborationSessionService.leave(documentId, requireSessionId(request), headerAccessor)
         );
     }
 
@@ -58,7 +57,7 @@ public class CollaborationController {
             SimpMessageHeaderAccessor headerAccessor) {
         collaborationBroadcastService.broadcastPresenceEvent(
                 documentId,
-                collaborationPresenceService.publishPresence(documentId, request, sessionAttributes(headerAccessor))
+                collaborationPresenceService.publishPresence(documentId, request, headerAccessor)
         );
     }
 
@@ -67,12 +66,7 @@ public class CollaborationController {
             @DestinationVariable UUID documentId,
             @Payload SubmitOperationRequest request,
             SimpMessageHeaderAccessor headerAccessor) {
-        Map<String, Object> base = sessionAttributes(headerAccessor);
-        Map<String, Object> attrs = base != null ? new java.util.HashMap<>(base) : new java.util.HashMap<>();
-        if (headerAccessor != null) {
-            attrs.put("simpSessionId", headerAccessor.getSessionId());
-        }
-        AcceptedOperationResponse response = documentOperationService.submitOperation(documentId, request, attrs);
+        AcceptedOperationResponse response = documentOperationService.submitOperation(documentId, request, headerAccessor);
         collaborationBroadcastService.broadcastAcceptedOperation(documentId, response);
         redisCollaborationEventPublisher.publishAcceptedOperation(documentId, response);
     }
@@ -82,9 +76,5 @@ public class CollaborationController {
             throw new InvalidCollaborationRequestException("Leave session requires sessionId");
         }
         return request.sessionId();
-    }
-
-    private Map<String, Object> sessionAttributes(SimpMessageHeaderAccessor headerAccessor) {
-        return headerAccessor == null ? null : headerAccessor.getSessionAttributes();
     }
 }

@@ -20,12 +20,12 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -72,10 +72,10 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     @Override
     @Transactional
     public AcceptedOperationResponse submitOperation(
-            UUID documentId, SubmitOperationRequest request, Map<String, Object> sessionAttributes) {
+            UUID documentId, SubmitOperationRequest request, SimpMessageHeaderAccessor headerAccessor) {
 
         // 1. Actor resolution
-        User actor = currentUserProvider.requireCurrentUser(sessionAttributes);
+        User actor = currentUserProvider.requireCurrentUser(headerAccessor);
 
         // 2. Payload validation (fail fast before touching the DB)
         validatePayload(request.operationType(), request.payload());
@@ -159,8 +159,9 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         }
 
         // 9. Persist accepted operation and updated document
-        Object rawSessionId = sessionAttributes.get("simpSessionId");
-        String clientSessionId = rawSessionId != null ? rawSessionId.toString() : "";
+        String clientSessionId = headerAccessor != null && headerAccessor.getSessionId() != null
+                ? headerAccessor.getSessionId()
+                : "";
         DocumentOperation accepted = DocumentOperation.builder()
                 .document(document)
                 .actor(actor)

@@ -6,6 +6,7 @@ import com.mwang.backend.web.model.CreateDocumentRequest;
 import com.mwang.backend.web.model.DocumentPagedList;
 import com.mwang.backend.web.model.DocumentResponse;
 import com.mwang.backend.web.model.UpdateDocumentRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -41,8 +42,8 @@ public class DocumentController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public DocumentResponse create(@Valid @RequestBody CreateDocumentRequest request) {
-        return documentService.create(request);
+    public DocumentResponse create(@Valid @RequestBody CreateDocumentRequest request, HttpServletRequest httpRequest) {
+        return documentService.create(request, httpRequest);
     }
 
     @GetMapping
@@ -51,24 +52,25 @@ public class DocumentController {
             @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
-            @RequestParam(required = false) String sort) {
-        return documentService.list(DocumentListScope.from(scope), query, buildPageable(page, size, sort));
+            @RequestParam(required = false) String sort,
+            HttpServletRequest httpRequest) {
+        return documentService.list(DocumentListScope.from(scope), query, buildPageable(page, size, sort), httpRequest);
     }
 
     @GetMapping("/{id}")
-    public DocumentResponse getById(@PathVariable UUID id) {
-        return documentService.getById(id);
+    public DocumentResponse getById(@PathVariable UUID id, HttpServletRequest httpRequest) {
+        return documentService.getById(id, httpRequest);
     }
 
     @PutMapping("/{id}")
-    public DocumentResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateDocumentRequest request) {
-        return documentService.update(id, request);
+    public DocumentResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateDocumentRequest request, HttpServletRequest httpRequest) {
+        return documentService.update(id, request, httpRequest);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable UUID id) {
-        documentService.delete(id);
+    public void delete(@PathVariable UUID id, HttpServletRequest httpRequest) {
+        documentService.delete(id, httpRequest);
     }
 
     private Pageable buildPageable(int page, int size, String sort) {

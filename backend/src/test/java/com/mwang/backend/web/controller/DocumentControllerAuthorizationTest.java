@@ -36,7 +36,7 @@ class DocumentControllerAuthorizationTest {
 
     @Test
     void userContextRequired_returns400() throws Exception {
-        when(documentService.create(any()))
+        when(documentService.create(any(), any()))
                 .thenThrow(new UserContextRequiredException("X-User-Id header is required"));
 
         mockMvc.perform(post("/api/documents")
@@ -51,7 +51,7 @@ class DocumentControllerAuthorizationTest {
     @Test
     void userNotFound_returns400() throws Exception {
         UUID userId = UUID.randomUUID();
-        when(documentService.create(any()))
+        when(documentService.create(any(), any()))
                 .thenThrow(new UserNotFoundException(userId));
 
         mockMvc.perform(post("/api/documents")
@@ -68,7 +68,7 @@ class DocumentControllerAuthorizationTest {
     void documentAccessDenied_returns403() throws Exception {
         UUID userId = UUID.randomUUID();
         UUID docId = UUID.randomUUID();
-        when(documentService.getById(any()))
+        when(documentService.getById(any(), any()))
                 .thenThrow(new DocumentAccessDeniedException(docId, userId));
 
         mockMvc.perform(get("/api/documents/{id}", docId)

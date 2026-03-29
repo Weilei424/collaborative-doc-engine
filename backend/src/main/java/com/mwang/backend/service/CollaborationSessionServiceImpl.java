@@ -10,6 +10,7 @@ import com.mwang.backend.service.exception.CollaborationSessionNotFoundException
 import com.mwang.backend.service.exception.DocumentNotFoundException;
 import com.mwang.backend.web.model.CollaborationSessionResponse;
 import com.mwang.backend.web.model.CollaborationSessionSnapshot;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -46,12 +47,13 @@ public class CollaborationSessionServiceImpl implements CollaborationSessionServ
 
     @Override
     public CollaborationSessionSnapshot join(UUID documentId) {
-        return join(documentId, null);
+        return join(documentId, (SimpMessageHeaderAccessor) null);
     }
 
     @Override
-    public CollaborationSessionSnapshot join(UUID documentId, Map<String, Object> sessionAttributes) {
-        User actor = currentUserProvider.requireCurrentUser(sessionAttributes);
+    public CollaborationSessionSnapshot join(UUID documentId, SimpMessageHeaderAccessor headerAccessor) {
+        User actor = currentUserProvider.requireCurrentUser(headerAccessor);
+        Map<String, Object> sessionAttributes = headerAccessor != null ? headerAccessor.getSessionAttributes() : null;
         Document document = requireDocument(documentId);
         documentAuthorizationService.assertCanRead(document, actor);
 
@@ -74,12 +76,13 @@ public class CollaborationSessionServiceImpl implements CollaborationSessionServ
 
     @Override
     public CollaborationSessionSnapshot leave(UUID documentId, UUID sessionId) {
-        return leave(documentId, sessionId, null);
+        return leave(documentId, sessionId, (SimpMessageHeaderAccessor) null);
     }
 
     @Override
-    public CollaborationSessionSnapshot leave(UUID documentId, UUID sessionId, Map<String, Object> sessionAttributes) {
-        User actor = currentUserProvider.requireCurrentUser(sessionAttributes);
+    public CollaborationSessionSnapshot leave(UUID documentId, UUID sessionId, SimpMessageHeaderAccessor headerAccessor) {
+        User actor = currentUserProvider.requireCurrentUser(headerAccessor);
+        Map<String, Object> sessionAttributes = headerAccessor != null ? headerAccessor.getSessionAttributes() : null;
         Document document = requireDocument(documentId);
         documentAuthorizationService.assertCanRead(document, actor);
 

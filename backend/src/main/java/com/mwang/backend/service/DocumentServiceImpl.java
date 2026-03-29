@@ -11,6 +11,7 @@ import com.mwang.backend.web.model.CreateDocumentRequest;
 import com.mwang.backend.web.model.DocumentPagedList;
 import com.mwang.backend.web.model.DocumentResponse;
 import com.mwang.backend.web.model.UpdateDocumentRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -34,8 +35,8 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional
-    public DocumentResponse create(CreateDocumentRequest request) {
-        User actor = currentUserProvider.requireCurrentUser();
+    public DocumentResponse create(CreateDocumentRequest request, HttpServletRequest httpRequest) {
+        User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document saved = documentRepository.save(Document.builder()
                 .title(request.title())
                 .content(request.content())
@@ -46,8 +47,8 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public DocumentPagedList list(DocumentListScope scope, String query, Pageable pageable) {
-        User actor = currentUserProvider.requireCurrentUser();
+    public DocumentPagedList list(DocumentListScope scope, String query, Pageable pageable, HttpServletRequest httpRequest) {
+        User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Page<Document> page = switch (scope) {
             case OWNED -> documentRepository.findOwnedByUserId(actor.getId(), normalizeQuery(query), pageable);
             case SHARED -> documentRepository.findSharedWithUserId(actor.getId(), normalizeQuery(query), pageable);
@@ -60,8 +61,8 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public DocumentResponse getById(UUID id) {
-        User actor = currentUserProvider.requireCurrentUser();
+    public DocumentResponse getById(UUID id, HttpServletRequest httpRequest) {
+        User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document document = documentRepository.findDetailedById(id)
                 .orElseThrow(() -> new DocumentNotFoundException(id));
         documentAuthorizationService.assertCanRead(document, actor);
@@ -70,8 +71,8 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional
-    public DocumentResponse update(UUID id, UpdateDocumentRequest request) {
-        User actor = currentUserProvider.requireCurrentUser();
+    public DocumentResponse update(UUID id, UpdateDocumentRequest request, HttpServletRequest httpRequest) {
+        User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document document = documentRepository.findById(id)
                 .orElseThrow(() -> new DocumentNotFoundException(id));
         documentAuthorizationService.assertOwner(document, actor);
@@ -86,8 +87,8 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional
-    public void delete(UUID id) {
-        User actor = currentUserProvider.requireCurrentUser();
+    public void delete(UUID id, HttpServletRequest httpRequest) {
+        User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document document = documentRepository.findById(id)
                 .orElseThrow(() -> new DocumentNotFoundException(id));
         documentAuthorizationService.assertOwner(document, actor);
