@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
+@Deprecated
 public class UserIdAuthenticationFilter extends OncePerRequestFilter {
 
     private final HeaderCurrentUserProvider userProvider;
@@ -45,7 +46,7 @@ public class UserIdAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
         try {
-            User user = userProvider.requireCurrentUser();
+            User user = userProvider.requireCurrentUser(request);
             UsernamePasswordAuthenticationToken auth =
                     new UsernamePasswordAuthenticationToken(user, null, List.of());
             SecurityContextHolder.getContext().setAuthentication(auth);
