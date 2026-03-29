@@ -3,8 +3,9 @@ package com.mwang.backend.config;
 import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.repositories.DocumentRepository;
-import com.mwang.backend.service.DocumentAuthorizationService;
+import com.mwang.backend.service.CurrentUserProvider;
 import com.mwang.backend.service.HeaderCurrentUserProvider;
+import com.mwang.backend.service.DocumentAuthorizationService;
 import com.mwang.backend.service.exception.DocumentNotFoundException;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.Message;
@@ -33,22 +34,32 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             "^/topic/documents/([0-9a-fA-F-]{36})/(sessions|presence|operations)$"
     );
 
-    private final HeaderCurrentUserProvider currentUserProvider;
+    private final CurrentUserProvider currentUserProvider;
     private final DocumentRepository documentRepository;
     private final DocumentAuthorizationService documentAuthorizationService;
+    private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
+    private final UserPrincipalHandshakeHandler userPrincipalHandshakeHandler;
 
     public WebSocketConfig(
-            HeaderCurrentUserProvider currentUserProvider,
+            CurrentUserProvider currentUserProvider,
             DocumentRepository documentRepository,
-            DocumentAuthorizationService documentAuthorizationService) {
+            DocumentAuthorizationService documentAuthorizationService,
+            JwtHandshakeInterceptor jwtHandshakeInterceptor,
+            UserPrincipalHandshakeHandler userPrincipalHandshakeHandler) {
         this.currentUserProvider = currentUserProvider;
         this.documentRepository = documentRepository;
         this.documentAuthorizationService = documentAuthorizationService;
+        this.jwtHandshakeInterceptor = jwtHandshakeInterceptor;
+        this.userPrincipalHandshakeHandler = userPrincipalHandshakeHandler;
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws").setAllowedOriginPatterns("*").withSockJS();
+        registry.addEndpoint("/ws")
+                .addInterceptors(jwtHandshakeInterceptor)
+                .setHandshakeHandler(userPrincipalHandshakeHandler)
+                .setAllowedOriginPatterns("*")
+                .withSockJS();
     }
 
     @Override
@@ -101,7 +112,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             return;
         }
 
-        User actor = currentUserProvider.requireCurrentUserFromSessionAttributes(accessor.getSessionAttributes());
+        User actor = currentUserProvider.requireCurrentUser(accessor);
         Document document = documentRepository.findDetailedById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         documentAuthorizationService.assertCanRead(document, actor);
