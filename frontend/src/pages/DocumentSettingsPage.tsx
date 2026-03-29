@@ -64,63 +64,71 @@ export function DocumentSettingsPage() {
       </header>
 
       <main className="max-w-2xl mx-auto px-6 py-8 space-y-8">
-        <section>
-          <h2 className="text-sm font-semibold uppercase text-gray-500 mb-3">Document</h2>
-          <div className="bg-white border rounded-lg p-4 space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Title</label>
-              <input className="w-full border rounded px-3 py-2 text-sm"
-                value={title} onChange={e => setTitle(e.target.value)} maxLength={255} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Visibility</label>
-              <select className="border rounded px-3 py-2 text-sm"
-                value={visibility} onChange={e => setVisibility(e.target.value as Visibility)}>
-                <option value="PRIVATE">Private</option>
-                <option value="SHARED">Shared</option>
-                <option value="PUBLIC">Public</option>
-              </select>
-            </div>
-            <button onClick={handleSave} disabled={saving}
-              className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50">
-              {saving ? 'Saving…' : 'Save changes'}
-            </button>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="text-sm font-semibold uppercase text-gray-500 mb-3">Collaborators</h2>
-          <div className="bg-white border rounded-lg p-4">
-            {collaborators.length === 0 ? (
-              <p className="text-sm text-gray-400 mb-4">No collaborators yet</p>
-            ) : (
-              <div className="mb-4">
-                {collaborators.map(c => (
-                  <CollaboratorRow key={c.userId} documentId={id!}
-                    collaborator={c} onUpdated={fetchDoc} />
-                ))}
+        {doc.currentUserPermission === 'OWNER' && (
+          <section>
+            <h2 className="text-sm font-semibold uppercase text-gray-500 mb-3">Document</h2>
+            <div className="bg-white border rounded-lg p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Title</label>
+                <input className="w-full border rounded px-3 py-2 text-sm"
+                  value={title} onChange={e => setTitle(e.target.value)} maxLength={255} />
               </div>
-            )}
-
-            <div className="pt-2 border-t">
-              <p className="text-sm font-medium mb-2">Add collaborator</p>
-              {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <UserSearchCombobox onSelect={handleAddCollaborator}
-                    placeholder="Search by username or email…" />
-                </div>
-                <select className="border rounded px-2 py-2 text-sm"
-                  value={addPermission}
-                  onChange={e => setAddPermission(e.target.value as Permission)}>
-                  <option value="READ">READ</option>
-                  <option value="WRITE">WRITE</option>
-                  <option value="ADMIN">ADMIN</option>
+              <div>
+                <label className="block text-sm font-medium mb-1">Visibility</label>
+                <select className="border rounded px-3 py-2 text-sm"
+                  value={visibility} onChange={e => setVisibility(e.target.value as Visibility)}>
+                  <option value="PRIVATE">Private</option>
+                  <option value="SHARED">Shared</option>
+                  <option value="PUBLIC">Public</option>
                 </select>
               </div>
+              <button onClick={handleSave} disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Saving…' : 'Save changes'}
+              </button>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
+
+        {(doc.currentUserPermission === 'OWNER' || doc.currentUserPermission === 'ADMIN') && (
+          <section>
+            <h2 className="text-sm font-semibold uppercase text-gray-500 mb-3">Collaborators</h2>
+            <div className="bg-white border rounded-lg p-4">
+              {collaborators.length === 0 ? (
+                <p className="text-sm text-gray-400 mb-4">No collaborators yet</p>
+              ) : (
+                <div className="mb-4">
+                  {collaborators.map(c => (
+                    <CollaboratorRow key={c.userId} documentId={id!}
+                      collaborator={c} onUpdated={fetchDoc} />
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-2 border-t">
+                <p className="text-sm font-medium mb-2">Add collaborator</p>
+                {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <UserSearchCombobox onSelect={handleAddCollaborator}
+                      placeholder="Search by username or email…" />
+                  </div>
+                  <select className="border rounded px-2 py-2 text-sm"
+                    value={addPermission}
+                    onChange={e => setAddPermission(e.target.value as Permission)}>
+                    <option value="READ">READ</option>
+                    <option value="WRITE">WRITE</option>
+                    <option value="ADMIN">ADMIN</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {doc.currentUserPermission !== 'OWNER' && doc.currentUserPermission !== 'ADMIN' && (
+          <p className="text-sm text-gray-500">You do not have permission to manage this document.</p>
+        )}
       </main>
     </div>
   )
