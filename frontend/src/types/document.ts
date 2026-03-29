@@ -1,5 +1,5 @@
 export type Visibility = 'PRIVATE' | 'SHARED' | 'PUBLIC'
-export type Permission = 'READ' | 'WRITE' | 'ADMIN'
+export type Permission = 'READ' | 'WRITE' | 'ADMIN' | 'OWNER'
 export type DocumentScope = 'owned' | 'shared' | 'public'
 
 export interface DocumentOwner {
