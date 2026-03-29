@@ -36,6 +36,21 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
 
     @Override
     @Transactional(readOnly = true)
+    public DocumentCollaboratorSummary getCollaborator(UUID documentId, UUID collaboratorUserId, HttpServletRequest httpRequest) {
+        User actor = currentUserProvider.requireCurrentUser(httpRequest);
+        Document document = requireDocument(documentId);
+        authorizationService.assertCanRead(document, actor);
+        DocumentCollaborator collab = collaboratorRepository
+                .findByDocumentIdAndUserId(documentId, collaboratorUserId)
+                .orElseThrow(() -> new CollaboratorNotFoundException(documentId, collaboratorUserId));
+        return new DocumentCollaboratorSummary(
+                collab.getUser().getId(),
+                collab.getUser().getUsername(),
+                collab.getPermission());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<DocumentCollaboratorSummary> listCollaborators(UUID documentId, HttpServletRequest httpRequest) {
         User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document document = requireDocument(documentId);
