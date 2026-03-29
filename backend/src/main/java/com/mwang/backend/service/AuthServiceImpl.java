@@ -48,7 +48,7 @@ public class AuthServiceImpl implements AuthService {
         user.setStatus(UserStatus.ACTIVE);
         User saved;
         try {
-            saved = userRepository.save(user);
+            saved = userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException ex) {
             if (userRepository.existsByUsername(request.username())) {
                 throw new UsernameAlreadyExistsException(request.username());
