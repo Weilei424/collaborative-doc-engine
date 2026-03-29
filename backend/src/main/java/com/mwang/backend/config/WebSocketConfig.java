@@ -4,7 +4,6 @@ import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.service.CurrentUserProvider;
-import com.mwang.backend.service.HeaderCurrentUserProvider;
 import com.mwang.backend.service.DocumentAuthorizationService;
 import com.mwang.backend.service.exception.DocumentNotFoundException;
 import org.springframework.context.annotation.Configuration;
@@ -20,8 +19,6 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -76,30 +73,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             public Message<?> preSend(Message<?> message, MessageChannel channel) {
                 StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
                 if (accessor != null) {
-                    bindCurrentUserHeader(accessor);
                     authorizeSubscription(accessor);
                 }
                 return message;
             }
         });
-    }
-
-    void bindCurrentUserHeader(StompHeaderAccessor accessor) {
-        Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
-        if (trimToNull(sessionAttributeValue(sessionAttributes)) != null) {
-            return;
-        }
-
-        String rawUserId = trimToNull(accessor.getFirstNativeHeader(HeaderCurrentUserProvider.USER_ID_HEADER));
-        if (rawUserId == null) {
-            return;
-        }
-
-        if (sessionAttributes == null) {
-            sessionAttributes = new HashMap<>();
-            accessor.setSessionAttributes(sessionAttributes);
-        }
-        sessionAttributes.put(HeaderCurrentUserProvider.USER_ID_HEADER, rawUserId);
     }
 
     void authorizeSubscription(StompHeaderAccessor accessor) {
@@ -131,19 +109,4 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         return UUID.fromString(matcher.group(1));
     }
 
-    private String sessionAttributeValue(Map<String, Object> sessionAttributes) {
-        if (sessionAttributes == null) {
-            return null;
-        }
-
-        Object rawUserId = sessionAttributes.get(HeaderCurrentUserProvider.USER_ID_HEADER);
-        return rawUserId == null ? null : rawUserId.toString();
-    }
-
-    private String trimToNull(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        return value.trim();
-    }
 }
