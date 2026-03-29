@@ -6,7 +6,6 @@ import com.mwang.backend.domain.User;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.service.CurrentUserProvider;
 import com.mwang.backend.service.DocumentAuthorizationService;
-import com.mwang.backend.service.HeaderCurrentUserProvider;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -20,7 +19,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -41,48 +39,6 @@ class WebSocketConfigTest {
             userPrincipalHandshakeHandler
     );
 
-    @Test
-    void bindCurrentUserHeaderCopiesNativeHeaderIntoSessionAttributes() {
-        UUID userId = UUID.randomUUID();
-        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
-        accessor.addNativeHeader(HeaderCurrentUserProvider.USER_ID_HEADER, userId.toString());
-
-        webSocketConfig.bindCurrentUserHeader(accessor);
-
-        assertThat(accessor.getSessionAttributes())
-                .containsEntry(HeaderCurrentUserProvider.USER_ID_HEADER, userId.toString());
-    }
-
-    @Test
-    void bindCurrentUserHeaderLeavesExistingSessionUserWhenMessageOmitsHeader() {
-        UUID userId = UUID.randomUUID();
-        HashMap<String, Object> sessionAttributes = new HashMap<>();
-        sessionAttributes.put(HeaderCurrentUserProvider.USER_ID_HEADER, userId.toString());
-        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
-        accessor.setSessionAttributes(sessionAttributes);
-
-        webSocketConfig.bindCurrentUserHeader(accessor);
-
-        assertThat(accessor.getSessionAttributes())
-                .containsEntry(HeaderCurrentUserProvider.USER_ID_HEADER, userId.toString());
-    }
-
-    @Test
-    void bindCurrentUserHeaderDoesNotOverwriteExistingSessionUserWhenLaterFrameSuppliesDifferentHeader() {
-        UUID boundUserId = UUID.randomUUID();
-        UUID spoofedUserId = UUID.randomUUID();
-        HashMap<String, Object> sessionAttributes = new HashMap<>();
-        sessionAttributes.put(HeaderCurrentUserProvider.USER_ID_HEADER, boundUserId.toString());
-        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
-        accessor.setSessionAttributes(sessionAttributes);
-        accessor.addNativeHeader(HeaderCurrentUserProvider.USER_ID_HEADER, spoofedUserId.toString());
-
-        webSocketConfig.bindCurrentUserHeader(accessor);
-
-        assertThat(accessor.getSessionAttributes())
-                .containsEntry(HeaderCurrentUserProvider.USER_ID_HEADER, boundUserId.toString());
-    }
-
     @ParameterizedTest
     @ValueSource(strings = {"sessions", "presence", "operations"})
     void authorizeSubscriptionRejectsProtectedTopicWhenActorCannotReadDocument(String topicSuffix) {
@@ -92,9 +48,7 @@ class WebSocketConfigTest {
         DocumentAccessDeniedException accessDeniedException = new DocumentAccessDeniedException(documentId, actor.getId());
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
         accessor.setDestination("/topic/documents/" + documentId + "/" + topicSuffix);
-        accessor.setSessionAttributes(new HashMap<>(Map.of(
-                HeaderCurrentUserProvider.USER_ID_HEADER, actor.getId().toString()
-        )));
+        accessor.setSessionAttributes(new HashMap<>(Map.of("user", actor)));
 
         when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
