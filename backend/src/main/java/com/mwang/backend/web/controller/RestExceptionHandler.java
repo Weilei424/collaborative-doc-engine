@@ -5,13 +5,16 @@ import com.mwang.backend.service.exception.CollaboratorAlreadyExistsException;
 import com.mwang.backend.service.exception.CollaboratorNotFoundException;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
 import com.mwang.backend.service.exception.DocumentNotFoundException;
+import com.mwang.backend.service.exception.EmailAlreadyExistsException;
 import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
+import com.mwang.backend.service.exception.InvalidCredentialsException;
 import com.mwang.backend.service.exception.InvalidDocumentRequestException;
 import com.mwang.backend.service.exception.InvalidDocumentScopeException;
 import com.mwang.backend.service.exception.InvalidOperationException;
 import com.mwang.backend.service.exception.OperationConflictException;
 import com.mwang.backend.service.exception.UserContextRequiredException;
 import com.mwang.backend.service.exception.UserNotFoundException;
+import com.mwang.backend.service.exception.UsernameAlreadyExistsException;
 import com.mwang.backend.web.model.ApiErrorResponse;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
@@ -73,6 +76,24 @@ public class RestExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleCollaboratorAlreadyExists(CollaboratorAlreadyExistsException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiErrorResponse.of("COLLABORATOR_ALREADY_EXISTS", ex.getMessage()));
+    }
+
+    @ExceptionHandler(UsernameAlreadyExistsException.class)
+    public ResponseEntity<ApiErrorResponse> handleUsernameAlreadyExists(UsernameAlreadyExistsException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiErrorResponse.of("USERNAME_ALREADY_EXISTS", ex.getMessage()));
+    }
+
+    @ExceptionHandler(EmailAlreadyExistsException.class)
+    public ResponseEntity<ApiErrorResponse> handleEmailAlreadyExists(EmailAlreadyExistsException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiErrorResponse.of("EMAIL_ALREADY_EXISTS", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidCredentials(InvalidCredentialsException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiErrorResponse.of("INVALID_CREDENTIALS", ex.getMessage()));
     }
 
     @ExceptionHandler(InvalidCollaborationRequestException.class)
