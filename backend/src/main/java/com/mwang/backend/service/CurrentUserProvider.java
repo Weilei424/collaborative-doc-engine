@@ -1,13 +1,10 @@
 package com.mwang.backend.service;
 
 import com.mwang.backend.domain.User;
-
-import java.util.Map;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 
 public interface CurrentUserProvider {
-    User requireCurrentUser();
-
-    default User requireCurrentUser(Map<String, Object> sessionAttributes) {
-        return requireCurrentUser();
-    }
+    User requireCurrentUser(HttpServletRequest request);
+    User requireCurrentUser(SimpMessageHeaderAccessor headerAccessor);
 }
