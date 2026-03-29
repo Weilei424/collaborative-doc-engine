@@ -61,11 +61,11 @@ class CollaborationControllerTest {
         CollaborationSessionSnapshot snapshot = snapshot(documentId);
         StompHeaderAccessor headerAccessor = accessor();
 
-        when(sessionService.join(documentId, headerAccessor.getSessionAttributes())).thenReturn(snapshot);
+        when(sessionService.join(eq(documentId), any())).thenReturn(snapshot);
 
         collaborationController.joinSession(documentId, headerAccessor);
 
-        verify(sessionService).join(documentId, headerAccessor.getSessionAttributes());
+        verify(sessionService).join(eq(documentId), eq(headerAccessor));
         verify(broadcastService).broadcastSessionSnapshot(documentId, snapshot);
         verifyNoMoreInteractions(broadcastService);
     }
@@ -77,11 +77,11 @@ class CollaborationControllerTest {
         CollaborationSessionSnapshot snapshot = snapshot(documentId);
         StompHeaderAccessor headerAccessor = accessor();
 
-        when(sessionService.leave(documentId, sessionId, headerAccessor.getSessionAttributes())).thenReturn(snapshot);
+        when(sessionService.leave(eq(documentId), eq(sessionId), any())).thenReturn(snapshot);
 
         collaborationController.leaveSession(documentId, new LeaveSessionRequest(sessionId), headerAccessor);
 
-        verify(sessionService).leave(documentId, sessionId, headerAccessor.getSessionAttributes());
+        verify(sessionService).leave(eq(documentId), eq(sessionId), eq(headerAccessor));
         verify(broadcastService).broadcastSessionSnapshot(documentId, snapshot);
         verifyNoMoreInteractions(broadcastService);
     }
@@ -124,11 +124,11 @@ class CollaborationControllerTest {
         );
         StompHeaderAccessor headerAccessor = accessor();
 
-        when(presenceService.publishPresence(documentId, request, headerAccessor.getSessionAttributes())).thenReturn(event);
+        when(presenceService.publishPresence(eq(documentId), eq(request), any())).thenReturn(event);
 
         collaborationController.updatePresence(documentId, request, headerAccessor);
 
-        verify(presenceService).publishPresence(documentId, request, headerAccessor.getSessionAttributes());
+        verify(presenceService).publishPresence(eq(documentId), eq(request), eq(headerAccessor));
         verify(broadcastService).broadcastPresenceEvent(documentId, event);
         verifyNoMoreInteractions(broadcastService);
     }

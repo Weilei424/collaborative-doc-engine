@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.util.List;
 import java.util.Optional;
@@ -46,6 +47,7 @@ class CollaboratorManagementServiceTest {
     private User collaboratorUser;
     private Document document;
     private UUID documentId;
+    private final MockHttpServletRequest httpRequest = new MockHttpServletRequest();
 
     @BeforeEach
     void setUp() {
@@ -63,7 +65,7 @@ class CollaboratorManagementServiceTest {
                 .visibility(DocumentVisibility.PRIVATE)
                 .build();
 
-        when(currentUserProvider.requireCurrentUser()).thenReturn(owner);
+        when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(owner);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
     }
 
@@ -71,7 +73,7 @@ class CollaboratorManagementServiceTest {
     void listCollaborators_delegatesAuthorizationAndReturnsSummaries() {
         document.addCollaborator(collaboratorUser, DocumentPermission.READ);
 
-        List<DocumentCollaboratorSummary> result = service.listCollaborators(documentId);
+        List<DocumentCollaboratorSummary> result = service.listCollaborators(documentId, httpRequest);
 
         verify(authorizationService).assertCanRead(document, owner);
         assertThat(result).hasSize(1);
@@ -86,7 +88,7 @@ class CollaboratorManagementServiceTest {
                 .thenReturn(false);
 
         DocumentCollaboratorSummary result =
-                service.addCollaborator(documentId, collaboratorUser.getId(), DocumentPermission.WRITE);
+                service.addCollaborator(documentId, collaboratorUser.getId(), DocumentPermission.WRITE, httpRequest);
 
         verify(authorizationService).assertCanAdmin(document, owner);
         verify(collaboratorRepository).save(any(DocumentCollaborator.class));
@@ -100,7 +102,7 @@ class CollaboratorManagementServiceTest {
         when(collaboratorRepository.existsByDocumentIdAndUserId(documentId, collaboratorUser.getId()))
                 .thenReturn(true);
 
-        assertThatThrownBy(() -> service.addCollaborator(documentId, collaboratorUser.getId(), DocumentPermission.WRITE))
+        assertThatThrownBy(() -> service.addCollaborator(documentId, collaboratorUser.getId(), DocumentPermission.WRITE, httpRequest))
                 .isInstanceOf(CollaboratorAlreadyExistsException.class);
     }
 
@@ -108,7 +110,7 @@ class CollaboratorManagementServiceTest {
     void addCollaborator_throwsWhenTargetIsOwner() {
         when(userRepository.findById(owner.getId())).thenReturn(Optional.of(owner));
 
-        assertThatThrownBy(() -> service.addCollaborator(documentId, owner.getId(), DocumentPermission.WRITE))
+        assertThatThrownBy(() -> service.addCollaborator(documentId, owner.getId(), DocumentPermission.WRITE, httpRequest))
                 .isInstanceOf(InvalidCollaborationRequestException.class);
     }
 
@@ -121,7 +123,7 @@ class CollaboratorManagementServiceTest {
                 .thenReturn(Optional.of(entry));
 
         DocumentCollaboratorSummary result =
-                service.updateCollaborator(documentId, collaboratorUser.getId(), DocumentPermission.WRITE);
+                service.updateCollaborator(documentId, collaboratorUser.getId(), DocumentPermission.WRITE, httpRequest);
 
         verify(authorizationService).assertCanAdmin(document, owner);
         verify(collaboratorRepository).save(entry);
@@ -133,7 +135,7 @@ class CollaboratorManagementServiceTest {
         when(collaboratorRepository.findByDocumentIdAndUserId(documentId, collaboratorUser.getId()))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.updateCollaborator(documentId, collaboratorUser.getId(), DocumentPermission.WRITE))
+        assertThatThrownBy(() -> service.updateCollaborator(documentId, collaboratorUser.getId(), DocumentPermission.WRITE, httpRequest))
                 .isInstanceOf(CollaboratorNotFoundException.class);
     }
 
@@ -142,7 +144,7 @@ class CollaboratorManagementServiceTest {
         when(collaboratorRepository.existsByDocumentIdAndUserId(documentId, collaboratorUser.getId()))
                 .thenReturn(true);
 
-        service.removeCollaborator(documentId, collaboratorUser.getId());
+        service.removeCollaborator(documentId, collaboratorUser.getId(), httpRequest);
 
         verify(authorizationService).assertCanAdmin(document, owner);
         verify(collaboratorRepository).deleteByDocumentIdAndUserId(documentId, collaboratorUser.getId());
@@ -153,13 +155,13 @@ class CollaboratorManagementServiceTest {
         when(collaboratorRepository.existsByDocumentIdAndUserId(documentId, collaboratorUser.getId()))
                 .thenReturn(false);
 
-        assertThatThrownBy(() -> service.removeCollaborator(documentId, collaboratorUser.getId()))
+        assertThatThrownBy(() -> service.removeCollaborator(documentId, collaboratorUser.getId(), httpRequest))
                 .isInstanceOf(CollaboratorNotFoundException.class);
     }
 
     @Test
     void removeCollaborator_throwsWhenTargetIsOwner() {
-        assertThatThrownBy(() -> service.removeCollaborator(documentId, owner.getId()))
+        assertThatThrownBy(() -> service.removeCollaborator(documentId, owner.getId(), httpRequest))
                 .isInstanceOf(InvalidCollaborationRequestException.class);
     }
 
@@ -180,7 +182,7 @@ class CollaboratorManagementServiceTest {
                 List.of(), "OWNER");
         when(documentMapper.toResponse(refreshed, "OWNER")).thenReturn(expectedResponse);
 
-        DocumentResponse result = service.transferOwnership(documentId, collaboratorUser.getId());
+        DocumentResponse result = service.transferOwnership(documentId, collaboratorUser.getId(), httpRequest);
 
         verify(authorizationService).assertOwner(document, owner);
         verify(documentRepository).save(document);
@@ -190,7 +192,7 @@ class CollaboratorManagementServiceTest {
 
     @Test
     void transferOwnership_throwsWhenTargetNotACollaborator() {
-        assertThatThrownBy(() -> service.transferOwnership(documentId, collaboratorUser.getId()))
+        assertThatThrownBy(() -> service.transferOwnership(documentId, collaboratorUser.getId(), httpRequest))
                 .isInstanceOf(CollaboratorNotFoundException.class);
     }
 }

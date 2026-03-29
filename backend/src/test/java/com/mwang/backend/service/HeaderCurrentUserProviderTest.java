@@ -4,16 +4,12 @@ import com.mwang.backend.domain.User;
 import com.mwang.backend.repositories.UserRepository;
 import com.mwang.backend.service.exception.UserContextRequiredException;
 import com.mwang.backend.service.exception.UserNotFoundException;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.messaging.simp.SimpAttributes;
-import org.springframework.messaging.simp.SimpAttributesContextHolder;
 import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 
 import java.util.HashMap;
 import java.util.Optional;
@@ -21,6 +17,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -29,18 +26,12 @@ class HeaderCurrentUserProviderTest {
     @Mock
     private UserRepository userRepository;
 
-    @AfterEach
-    void clearRequestContext() {
-        RequestContextHolder.resetRequestAttributes();
-        SimpAttributesContextHolder.resetAttributes();
-    }
-
     @Test
     void requireCurrentUserRejectsMissingHeader() {
         HeaderCurrentUserProvider provider = new HeaderCurrentUserProvider(userRepository);
-        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+        MockHttpServletRequest request = new MockHttpServletRequest();
 
-        assertThatThrownBy(provider::requireCurrentUser)
+        assertThatThrownBy(() -> provider.requireCurrentUser(request))
                 .isInstanceOf(UserContextRequiredException.class);
     }
 
@@ -49,9 +40,8 @@ class HeaderCurrentUserProviderTest {
         HeaderCurrentUserProvider provider = new HeaderCurrentUserProvider(userRepository);
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-User-Id", "not-a-uuid");
-        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
 
-        assertThatThrownBy(provider::requireCurrentUser)
+        assertThatThrownBy(() -> provider.requireCurrentUser(request))
                 .isInstanceOf(UserContextRequiredException.class)
                 .hasMessageContaining("valid UUID");
     }
@@ -62,10 +52,9 @@ class HeaderCurrentUserProviderTest {
         UUID userId = UUID.randomUUID();
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-User-Id", userId.toString());
-        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(provider::requireCurrentUser)
+        assertThatThrownBy(() -> provider.requireCurrentUser(request))
                 .isInstanceOf(UserNotFoundException.class);
     }
 
@@ -76,67 +65,47 @@ class HeaderCurrentUserProviderTest {
         User user = User.builder().id(userId).username("actor").email("actor@example.com").passwordHash("hash").build();
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-User-Id", userId.toString());
-        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 
-        User resolved = provider.requireCurrentUser();
+        User resolved = provider.requireCurrentUser(request);
 
         assertThat(resolved).isEqualTo(user);
     }
 
     @Test
-    void requireCurrentUserReturnsResolvedUserFromMessagingSession() {
+    void requireCurrentUser_stomp_rejectsMissingSessionAttributes() {
         HeaderCurrentUserProvider provider = new HeaderCurrentUserProvider(userRepository);
-        UUID userId = UUID.randomUUID();
-        User user = User.builder().id(userId).username("actor").email("actor@example.com").passwordHash("hash").build();
-        HashMap<String, Object> sessionAttributes = new HashMap<>();
-        sessionAttributes.put("X-User-Id", userId.toString());
-        SimpAttributesContextHolder.setAttributes(new SimpAttributes("stomp-session", sessionAttributes));
-        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+        when(accessor.getSessionAttributes()).thenReturn(null);
 
-        User resolved = provider.requireCurrentUser();
-
-        assertThat(resolved).isEqualTo(user);
-    }
-
-    @Test
-    void requireCurrentUserPrefersMessagingSessionOverHttpHeader() {
-        HeaderCurrentUserProvider provider = new HeaderCurrentUserProvider(userRepository);
-        UUID messagingUserId = UUID.randomUUID();
-        UUID httpUserId = UUID.randomUUID();
-        User messagingUser = User.builder().id(messagingUserId).username("socket-user").email("socket@example.com").passwordHash("hash").build();
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader("X-User-Id", httpUserId.toString());
-        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
-        HashMap<String, Object> sessionAttributes = new HashMap<>();
-        sessionAttributes.put("X-User-Id", messagingUserId.toString());
-        SimpAttributesContextHolder.setAttributes(new SimpAttributes("stomp-session", sessionAttributes));
-        when(userRepository.findById(messagingUserId)).thenReturn(Optional.of(messagingUser));
-
-        User resolved = provider.requireCurrentUser();
-
-        assertThat(resolved).isEqualTo(messagingUser);
-    }
-
-    @Test
-    void requireCurrentUserFromSessionAttributesRejectsMissingUserContext() {
-        HeaderCurrentUserProvider provider = new HeaderCurrentUserProvider(userRepository);
-
-        assertThatThrownBy(() -> provider.requireCurrentUserFromSessionAttributes(new HashMap<>()))
+        assertThatThrownBy(() -> provider.requireCurrentUser(accessor))
                 .isInstanceOf(UserContextRequiredException.class)
                 .hasMessageContaining("STOMP session context");
     }
 
     @Test
-    void requireCurrentUserFromSessionAttributesReturnsResolvedUser() {
+    void requireCurrentUser_stomp_rejectsMissingUserIdInAttributes() {
+        HeaderCurrentUserProvider provider = new HeaderCurrentUserProvider(userRepository);
+        SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+        when(accessor.getSessionAttributes()).thenReturn(new HashMap<>());
+
+        assertThatThrownBy(() -> provider.requireCurrentUser(accessor))
+                .isInstanceOf(UserContextRequiredException.class)
+                .hasMessageContaining("STOMP session context");
+    }
+
+    @Test
+    void requireCurrentUser_stomp_returnsResolvedUser() {
         HeaderCurrentUserProvider provider = new HeaderCurrentUserProvider(userRepository);
         UUID userId = UUID.randomUUID();
         User user = User.builder().id(userId).username("actor").email("actor@example.com").passwordHash("hash").build();
         HashMap<String, Object> sessionAttributes = new HashMap<>();
         sessionAttributes.put(HeaderCurrentUserProvider.USER_ID_HEADER, " " + userId + " ");
+        SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+        when(accessor.getSessionAttributes()).thenReturn(sessionAttributes);
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 
-        User resolved = provider.requireCurrentUserFromSessionAttributes(sessionAttributes);
+        User resolved = provider.requireCurrentUser(accessor);
 
         assertThat(resolved).isEqualTo(user);
     }

@@ -57,7 +57,7 @@ class CollaboratorControllerTest {
     void listCollaborators_returns200WithCollaboratorList() throws Exception {
         DocumentCollaboratorSummary summary =
                 new DocumentCollaboratorSummary(USER_ID, "alice", DocumentPermission.WRITE);
-        when(collaboratorManagementService.listCollaborators(DOCUMENT_ID))
+        when(collaboratorManagementService.listCollaborators(eq(DOCUMENT_ID), any()))
                 .thenReturn(List.of(summary));
 
         mockMvc.perform(get("/api/documents/{documentId}/collaborators", DOCUMENT_ID))
@@ -69,7 +69,7 @@ class CollaboratorControllerTest {
 
     @Test
     void listCollaborators_returns403WhenAccessDenied() throws Exception {
-        when(collaboratorManagementService.listCollaborators(DOCUMENT_ID))
+        when(collaboratorManagementService.listCollaborators(eq(DOCUMENT_ID), any()))
                 .thenThrow(new DocumentAccessDeniedException(DOCUMENT_ID, USER_ID));
 
         mockMvc.perform(get("/api/documents/{documentId}/collaborators", DOCUMENT_ID))
@@ -82,7 +82,7 @@ class CollaboratorControllerTest {
         AddCollaboratorRequest request = new AddCollaboratorRequest(USER_ID, DocumentPermission.WRITE);
         DocumentCollaboratorSummary summary =
                 new DocumentCollaboratorSummary(USER_ID, "alice", DocumentPermission.WRITE);
-        when(collaboratorManagementService.addCollaborator(DOCUMENT_ID, USER_ID, DocumentPermission.WRITE))
+        when(collaboratorManagementService.addCollaborator(eq(DOCUMENT_ID), eq(USER_ID), eq(DocumentPermission.WRITE), any()))
                 .thenReturn(summary);
 
         mockMvc.perform(post("/api/documents/{documentId}/collaborators", DOCUMENT_ID)
@@ -96,7 +96,7 @@ class CollaboratorControllerTest {
     @Test
     void addCollaborator_returns403WhenNotAdmin() throws Exception {
         AddCollaboratorRequest request = new AddCollaboratorRequest(USER_ID, DocumentPermission.READ);
-        when(collaboratorManagementService.addCollaborator(eq(DOCUMENT_ID), eq(USER_ID), any()))
+        when(collaboratorManagementService.addCollaborator(eq(DOCUMENT_ID), eq(USER_ID), any(), any()))
                 .thenThrow(new DocumentAccessDeniedException(DOCUMENT_ID, USER_ID));
 
         mockMvc.perform(post("/api/documents/{documentId}/collaborators", DOCUMENT_ID)
@@ -108,7 +108,7 @@ class CollaboratorControllerTest {
     @Test
     void addCollaborator_returns409WhenAlreadyExists() throws Exception {
         AddCollaboratorRequest request = new AddCollaboratorRequest(USER_ID, DocumentPermission.READ);
-        when(collaboratorManagementService.addCollaborator(eq(DOCUMENT_ID), eq(USER_ID), any()))
+        when(collaboratorManagementService.addCollaborator(eq(DOCUMENT_ID), eq(USER_ID), any(), any()))
                 .thenThrow(new CollaboratorAlreadyExistsException(DOCUMENT_ID, USER_ID));
 
         mockMvc.perform(post("/api/documents/{documentId}/collaborators", DOCUMENT_ID)
@@ -131,7 +131,7 @@ class CollaboratorControllerTest {
         UpdateCollaboratorRequest request = new UpdateCollaboratorRequest(DocumentPermission.ADMIN);
         DocumentCollaboratorSummary summary =
                 new DocumentCollaboratorSummary(USER_ID, "alice", DocumentPermission.ADMIN);
-        when(collaboratorManagementService.updateCollaborator(DOCUMENT_ID, USER_ID, DocumentPermission.ADMIN))
+        when(collaboratorManagementService.updateCollaborator(eq(DOCUMENT_ID), eq(USER_ID), eq(DocumentPermission.ADMIN), any()))
                 .thenReturn(summary);
 
         mockMvc.perform(put("/api/documents/{documentId}/collaborators/{userId}", DOCUMENT_ID, USER_ID)
@@ -144,7 +144,7 @@ class CollaboratorControllerTest {
     @Test
     void updateCollaborator_returns404WhenNotFound() throws Exception {
         UpdateCollaboratorRequest request = new UpdateCollaboratorRequest(DocumentPermission.WRITE);
-        when(collaboratorManagementService.updateCollaborator(DOCUMENT_ID, USER_ID, DocumentPermission.WRITE))
+        when(collaboratorManagementService.updateCollaborator(eq(DOCUMENT_ID), eq(USER_ID), eq(DocumentPermission.WRITE), any()))
                 .thenThrow(new CollaboratorNotFoundException(DOCUMENT_ID, USER_ID));
 
         mockMvc.perform(put("/api/documents/{documentId}/collaborators/{userId}", DOCUMENT_ID, USER_ID)
@@ -163,7 +163,7 @@ class CollaboratorControllerTest {
     @Test
     void removeCollaborator_returns404WhenNotFound() throws Exception {
         doThrow(new CollaboratorNotFoundException(DOCUMENT_ID, USER_ID))
-                .when(collaboratorManagementService).removeCollaborator(DOCUMENT_ID, USER_ID);
+                .when(collaboratorManagementService).removeCollaborator(eq(DOCUMENT_ID), eq(USER_ID), any());
 
         mockMvc.perform(delete("/api/documents/{documentId}/collaborators/{userId}", DOCUMENT_ID, USER_ID))
                 .andExpect(status().isNotFound());
@@ -172,7 +172,7 @@ class CollaboratorControllerTest {
     @Test
     void removeCollaborator_returns400WhenOwnerRemovalAttempted() throws Exception {
         doThrow(new InvalidCollaborationRequestException("Cannot remove the document owner"))
-                .when(collaboratorManagementService).removeCollaborator(DOCUMENT_ID, USER_ID);
+                .when(collaboratorManagementService).removeCollaborator(eq(DOCUMENT_ID), eq(USER_ID), any());
 
         mockMvc.perform(delete("/api/documents/{documentId}/collaborators/{userId}", DOCUMENT_ID, USER_ID))
                 .andExpect(status().isBadRequest())
@@ -186,7 +186,7 @@ class CollaboratorControllerTest {
         DocumentResponse response = new DocumentResponse(
                 DOCUMENT_ID, "Doc", null, DocumentVisibility.PRIVATE, 0L, null, null,
                 new DocumentOwnerSummary(newOwnerId, "newowner"), List.of(), "OWNER");
-        when(collaboratorManagementService.transferOwnership(DOCUMENT_ID, newOwnerId))
+        when(collaboratorManagementService.transferOwnership(eq(DOCUMENT_ID), eq(newOwnerId), any()))
                 .thenReturn(response);
 
         mockMvc.perform(put("/api/documents/{documentId}/collaborators/owner", DOCUMENT_ID)
@@ -201,7 +201,7 @@ class CollaboratorControllerTest {
     void transferOwnership_returns403WhenNotOwner() throws Exception {
         UUID newOwnerId = UUID.randomUUID();
         TransferOwnershipRequest request = new TransferOwnershipRequest(newOwnerId);
-        when(collaboratorManagementService.transferOwnership(DOCUMENT_ID, newOwnerId))
+        when(collaboratorManagementService.transferOwnership(eq(DOCUMENT_ID), eq(newOwnerId), any()))
                 .thenThrow(new DocumentAccessDeniedException(DOCUMENT_ID, USER_ID));
 
         mockMvc.perform(put("/api/documents/{documentId}/collaborators/owner", DOCUMENT_ID)
@@ -214,7 +214,7 @@ class CollaboratorControllerTest {
     void transferOwnership_returns404WhenTargetNotACollaborator() throws Exception {
         UUID newOwnerId = UUID.randomUUID();
         TransferOwnershipRequest request = new TransferOwnershipRequest(newOwnerId);
-        when(collaboratorManagementService.transferOwnership(DOCUMENT_ID, newOwnerId))
+        when(collaboratorManagementService.transferOwnership(eq(DOCUMENT_ID), eq(newOwnerId), any()))
                 .thenThrow(new CollaboratorNotFoundException(DOCUMENT_ID, newOwnerId));
 
         mockMvc.perform(put("/api/documents/{documentId}/collaborators/owner", DOCUMENT_ID)

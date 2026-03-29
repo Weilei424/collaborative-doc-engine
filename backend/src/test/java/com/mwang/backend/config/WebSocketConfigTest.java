@@ -4,6 +4,7 @@ import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentVisibility;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.repositories.DocumentRepository;
+import com.mwang.backend.service.CurrentUserProvider;
 import com.mwang.backend.service.DocumentAuthorizationService;
 import com.mwang.backend.service.HeaderCurrentUserProvider;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
@@ -27,13 +28,17 @@ import static org.mockito.Mockito.when;
 
 class WebSocketConfigTest {
 
-    private final HeaderCurrentUserProvider currentUserProvider = Mockito.mock(HeaderCurrentUserProvider.class);
+    private final CurrentUserProvider currentUserProvider = Mockito.mock(CurrentUserProvider.class);
     private final DocumentRepository documentRepository = Mockito.mock(DocumentRepository.class);
     private final DocumentAuthorizationService documentAuthorizationService = Mockito.mock(DocumentAuthorizationService.class);
+    private final JwtHandshakeInterceptor jwtHandshakeInterceptor = Mockito.mock(JwtHandshakeInterceptor.class);
+    private final UserPrincipalHandshakeHandler userPrincipalHandshakeHandler = Mockito.mock(UserPrincipalHandshakeHandler.class);
     private final WebSocketConfig webSocketConfig = new WebSocketConfig(
             currentUserProvider,
             documentRepository,
-            documentAuthorizationService
+            documentAuthorizationService,
+            jwtHandshakeInterceptor,
+            userPrincipalHandshakeHandler
     );
 
     @Test
@@ -91,8 +96,7 @@ class WebSocketConfigTest {
                 HeaderCurrentUserProvider.USER_ID_HEADER, actor.getId().toString()
         )));
 
-        when(currentUserProvider.requireCurrentUserFromSessionAttributes(accessor.getSessionAttributes()))
-                .thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doThrow(accessDeniedException).when(documentAuthorizationService).assertCanRead(document, actor);
 

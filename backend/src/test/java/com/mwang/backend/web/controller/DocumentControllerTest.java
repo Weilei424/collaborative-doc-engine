@@ -56,7 +56,7 @@ class DocumentControllerTest {
         UUID ownerId = UUID.randomUUID();
         DocumentResponse response = sampleResponse(ownerId, "owner-user", DocumentPermission.ADMIN);
 
-        Mockito.when(documentService.create(any(CreateDocumentRequest.class))).thenReturn(response);
+        Mockito.when(documentService.create(any(CreateDocumentRequest.class), any())).thenReturn(response);
 
         mockMvc.perform(post("/api/documents")
                         .header("X-User-Id", ownerId)
@@ -77,7 +77,7 @@ class DocumentControllerTest {
         DocumentResponse response = sampleResponse(actorId, "owner-user", DocumentPermission.ADMIN);
         DocumentPagedList pagedList = new DocumentPagedList(List.of(response), 0, 20, 1L, 1);
 
-        Mockito.when(documentService.list(eq(DocumentListScope.ACCESSIBLE), eq("doc"), any(Pageable.class)))
+        Mockito.when(documentService.list(eq(DocumentListScope.ACCESSIBLE), eq("doc"), any(Pageable.class), any()))
                 .thenReturn(pagedList);
 
         mockMvc.perform(get("/api/documents")
@@ -97,7 +97,7 @@ class DocumentControllerTest {
 
     @Test
     void listAcceptsOwnedScope() throws Exception {
-        Mockito.when(documentService.list(eq(DocumentListScope.OWNED), eq(null), any(Pageable.class)))
+        Mockito.when(documentService.list(eq(DocumentListScope.OWNED), eq(null), any(Pageable.class), any()))
                 .thenReturn(new DocumentPagedList(List.of(), 0, 20, 0L, 0));
 
         mockMvc.perform(get("/api/documents")
@@ -109,7 +109,7 @@ class DocumentControllerTest {
 
     @Test
     void listAcceptsSharedScope() throws Exception {
-        Mockito.when(documentService.list(eq(DocumentListScope.SHARED), eq(null), any(Pageable.class)))
+        Mockito.when(documentService.list(eq(DocumentListScope.SHARED), eq(null), any(Pageable.class), any()))
                 .thenReturn(new DocumentPagedList(List.of(), 0, 20, 0L, 0));
 
         mockMvc.perform(get("/api/documents")
@@ -121,7 +121,7 @@ class DocumentControllerTest {
 
     @Test
     void listAcceptsPublicScope() throws Exception {
-        Mockito.when(documentService.list(eq(DocumentListScope.PUBLIC), eq(null), any(Pageable.class)))
+        Mockito.when(documentService.list(eq(DocumentListScope.PUBLIC), eq(null), any(Pageable.class), any()))
                 .thenReturn(new DocumentPagedList(List.of(), 0, 20, 0L, 0));
 
         mockMvc.perform(get("/api/documents")
@@ -136,7 +136,7 @@ class DocumentControllerTest {
         UUID actorId = UUID.randomUUID();
         DocumentResponse response = sampleResponse(actorId, "owner-user", DocumentPermission.ADMIN);
 
-        Mockito.when(documentService.getById(response.id())).thenReturn(response);
+        Mockito.when(documentService.getById(eq(response.id()), any())).thenReturn(response);
 
         mockMvc.perform(get("/api/documents/{id}", response.id())
                         .header("X-User-Id", actorId))
@@ -147,7 +147,7 @@ class DocumentControllerTest {
 
     @Test
     void missingActorHeaderReturnsStableErrorEnvelope() throws Exception {
-        Mockito.when(documentService.list(eq(DocumentListScope.OWNED), eq(null), any(Pageable.class)))
+        Mockito.when(documentService.list(eq(DocumentListScope.OWNED), eq(null), any(Pageable.class), any()))
                 .thenThrow(new UserContextRequiredException());
 
         mockMvc.perform(get("/api/documents")
@@ -240,7 +240,7 @@ class DocumentControllerTest {
         UUID documentId = UUID.randomUUID();
         UUID actorId = UUID.randomUUID();
 
-        Mockito.when(documentService.getById(documentId))
+        Mockito.when(documentService.getById(eq(documentId), any()))
                 .thenThrow(new DocumentAccessDeniedException(documentId, actorId));
 
         mockMvc.perform(get("/api/documents/{id}", documentId)
@@ -253,7 +253,7 @@ class DocumentControllerTest {
     void missingDocumentReturns404() throws Exception {
         UUID documentId = UUID.randomUUID();
 
-        Mockito.when(documentService.getById(documentId))
+        Mockito.when(documentService.getById(eq(documentId), any()))
                 .thenThrow(new DocumentNotFoundException(documentId));
 
         mockMvc.perform(get("/api/documents/{id}", documentId)
@@ -266,7 +266,7 @@ class DocumentControllerTest {
     void unknownUserReturnsStableErrorEnvelope() throws Exception {
         UUID userId = UUID.randomUUID();
 
-        Mockito.when(documentService.list(eq(DocumentListScope.ACCESSIBLE), eq(null), any(Pageable.class)))
+        Mockito.when(documentService.list(eq(DocumentListScope.ACCESSIBLE), eq(null), any(Pageable.class), any()))
                 .thenThrow(new UserNotFoundException(userId));
 
         mockMvc.perform(get("/api/documents")
@@ -280,7 +280,7 @@ class DocumentControllerTest {
         UUID id = UUID.randomUUID();
         UUID actorId = UUID.randomUUID();
 
-        Mockito.when(documentService.update(eq(id), any(UpdateDocumentRequest.class)))
+        Mockito.when(documentService.update(eq(id), any(UpdateDocumentRequest.class), any()))
                 .thenThrow(new DocumentAccessDeniedException(id, actorId));
 
         mockMvc.perform(put("/api/documents/{id}", id)
@@ -297,7 +297,7 @@ class DocumentControllerTest {
         UUID actorId = UUID.randomUUID();
 
         Mockito.doThrow(new DocumentAccessDeniedException(id, actorId))
-                .when(documentService).delete(id);
+                .when(documentService).delete(eq(id), any());
 
         mockMvc.perform(delete("/api/documents/{id}", id)
                         .header("X-User-Id", actorId))
@@ -308,7 +308,7 @@ class DocumentControllerTest {
     @Test
     void deleteReturns204() throws Exception {
         UUID id = UUID.randomUUID();
-        Mockito.doNothing().when(documentService).delete(id);
+        Mockito.doNothing().when(documentService).delete(eq(id), any());
 
         mockMvc.perform(delete("/api/documents/{id}", id)
                         .header("X-User-Id", UUID.randomUUID()))
@@ -330,8 +330,3 @@ class DocumentControllerTest {
         );
     }
 }
-
-
-
-
-

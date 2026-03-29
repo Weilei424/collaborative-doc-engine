@@ -17,11 +17,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest
@@ -38,7 +39,7 @@ import static org.mockito.Mockito.when;
 class DocumentOperationConcurrencyTest {
 
     @MockitoBean
-    private HeaderCurrentUserProvider currentUserProvider;
+    private CurrentUserProvider currentUserProvider;
 
     @MockitoBean
     private KafkaOperationEventPublisher kafkaOperationEventPublisher;
@@ -76,7 +77,7 @@ class DocumentOperationConcurrencyTest {
                 .currentVersion(0L)
                 .build());
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
     }
 
     @AfterEach
@@ -89,7 +90,8 @@ class DocumentOperationConcurrencyTest {
     @Test
     void concurrentSubmits_serializeThroughPessimisticLock() throws Exception {
         JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
-        Map<String, Object> sessionAttrs = Map.of("X-User-Id", actor.getId().toString(), "simpSessionId", "test-session");
+        SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+        when(accessor.getSessionId()).thenReturn("test-session");
 
         CountDownLatch startLatch = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -101,13 +103,13 @@ class DocumentOperationConcurrencyTest {
             startLatch.await();
             return operationService.submitOperation(document.getId(),
                     new SubmitOperationRequest(op1Id, 0L, DocumentOperationType.INSERT_TEXT, payload),
-                    sessionAttrs);
+                    accessor);
         });
         Future<AcceptedOperationResponse> f2 = executor.submit(() -> {
             startLatch.await();
             return operationService.submitOperation(document.getId(),
                     new SubmitOperationRequest(op2Id, 0L, DocumentOperationType.INSERT_TEXT, payload),
-                    sessionAttrs);
+                    accessor);
         });
 
         startLatch.countDown();
@@ -130,7 +132,8 @@ class DocumentOperationConcurrencyTest {
     @Test
     void concurrentSubmits_withDuplicateOperationId_oneWinsOneIsIdempotent() throws Exception {
         JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
-        Map<String, Object> sessionAttrs = Map.of("X-User-Id", actor.getId().toString(), "simpSessionId", "test-session");
+        SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+        when(accessor.getSessionId()).thenReturn("test-session");
 
         UUID sharedOpId = UUID.randomUUID();
 
@@ -141,13 +144,13 @@ class DocumentOperationConcurrencyTest {
             startLatch.await();
             return operationService.submitOperation(document.getId(),
                     new SubmitOperationRequest(sharedOpId, 0L, DocumentOperationType.INSERT_TEXT, payload),
-                    sessionAttrs);
+                    accessor);
         });
         Future<AcceptedOperationResponse> f2 = executor.submit(() -> {
             startLatch.await();
             return operationService.submitOperation(document.getId(),
                     new SubmitOperationRequest(sharedOpId, 0L, DocumentOperationType.INSERT_TEXT, payload),
-                    sessionAttrs);
+                    accessor);
         });
 
         startLatch.countDown();

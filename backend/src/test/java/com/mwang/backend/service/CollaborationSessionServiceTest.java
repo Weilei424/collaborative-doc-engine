@@ -14,6 +14,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -26,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -59,7 +61,7 @@ class CollaborationSessionServiceTest {
         User actor = newUser("collab-user");
         Document document = newDocument(documentId, actor);
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(org.mockito.ArgumentMatchers.nullable(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of());
@@ -92,7 +94,7 @@ class CollaborationSessionServiceTest {
                 Instant.parse("2026-03-23T12:01:00Z")
         );
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(org.mockito.ArgumentMatchers.nullable(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findBySessionId(documentId, sessionId)).thenReturn(Optional.of(ownedSession));
@@ -113,7 +115,7 @@ class CollaborationSessionServiceTest {
         User actor = newUser("session-owner");
         Document document = newDocument(documentId, actor);
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(org.mockito.ArgumentMatchers.nullable(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findBySessionId(documentId, sessionId)).thenReturn(Optional.empty());
@@ -141,7 +143,7 @@ class CollaborationSessionServiceTest {
                 Instant.parse("2026-03-23T12:01:00Z")
         );
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(org.mockito.ArgumentMatchers.nullable(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findBySessionId(documentId, sessionId)).thenReturn(Optional.of(otherUsersSession));
@@ -161,15 +163,21 @@ class CollaborationSessionServiceTest {
         HashMap<String, Object> ownerSessionAttributes = new HashMap<>();
         HashMap<String, Object> otherConnectionAttributes = new HashMap<>();
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        SimpMessageHeaderAccessor ownerAccessor = mock(SimpMessageHeaderAccessor.class);
+        when(ownerAccessor.getSessionAttributes()).thenReturn(ownerSessionAttributes);
+
+        SimpMessageHeaderAccessor otherAccessor = mock(SimpMessageHeaderAccessor.class);
+        when(otherAccessor.getSessionAttributes()).thenReturn(otherConnectionAttributes);
+
+        when(currentUserProvider.requireCurrentUser(org.mockito.ArgumentMatchers.nullable(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of());
 
-        var joinSnapshot = sessionService.join(documentId,ownerSessionAttributes);
+        var joinSnapshot = sessionService.join(documentId, ownerAccessor);
         var ownedSession = joinSnapshot.sessions().get(0);
 
-        assertThatThrownBy(() -> sessionService.leave(documentId, ownedSession.sessionId(), otherConnectionAttributes))
+        assertThatThrownBy(() -> sessionService.leave(documentId, ownedSession.sessionId(), otherAccessor))
                 .isInstanceOf(CollaborationSessionAccessDeniedException.class);
 
         verify(collaborationSessionStore, never()).remove(documentId, ownedSession.sessionId());
@@ -182,12 +190,15 @@ class CollaborationSessionServiceTest {
         Document document = newDocument(documentId, actor);
         HashMap<String, Object> sessionAttributes = new HashMap<>();
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+        when(accessor.getSessionAttributes()).thenReturn(sessionAttributes);
+
+        when(currentUserProvider.requireCurrentUser(org.mockito.ArgumentMatchers.nullable(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of(), List.of());
 
-        var joinSnapshot = sessionService.join(documentId,sessionAttributes);
+        var joinSnapshot = sessionService.join(documentId, accessor);
         UUID createdSessionId = joinSnapshot.sessions().get(0).sessionId();
         when(collaborationSessionStore.findBySessionId(documentId, createdSessionId)).thenReturn(Optional.of(joinSnapshot.sessions().get(0)));
 
@@ -214,12 +225,15 @@ class CollaborationSessionServiceTest {
         Document document = newDocument(documentId, actor);
         HashMap<String, Object> sessionAttributes = new HashMap<>();
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+        when(accessor.getSessionAttributes()).thenReturn(sessionAttributes);
+
+        when(currentUserProvider.requireCurrentUser(org.mockito.ArgumentMatchers.nullable(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findByDocumentId(documentId)).thenReturn(List.of(), List.of());
 
-        var joinSnapshot = sessionService.join(documentId,sessionAttributes);
+        var joinSnapshot = sessionService.join(documentId, accessor);
         UUID createdSessionId = joinSnapshot.sessions().get(0).sessionId();
         com.mwang.backend.web.model.CollaborationSessionResponse ownedSession = new com.mwang.backend.web.model.CollaborationSessionResponse(
                 createdSessionId,
@@ -231,7 +245,7 @@ class CollaborationSessionServiceTest {
         );
         when(collaborationSessionStore.findBySessionId(documentId, createdSessionId)).thenReturn(Optional.of(ownedSession), Optional.empty());
 
-        sessionService.leave(documentId, createdSessionId, sessionAttributes);
+        sessionService.leave(documentId, createdSessionId, accessor);
 
         assertThat(sessionService.cleanupDisconnectedSessions(sessionAttributes)).isEmpty();
         verify(collaborationSessionStore, times(1)).remove(documentId, createdSessionId);

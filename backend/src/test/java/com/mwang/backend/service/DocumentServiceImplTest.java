@@ -21,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.time.Instant;
 import java.util.List;
@@ -51,6 +52,8 @@ class DocumentServiceImplTest {
     @InjectMocks
     private DocumentServiceImpl service;
 
+    private final MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+
     @Test
     void createAssignsCurrentActorAsOwnerAndReturnsOwnerPermission() {
         User actor = newUser("owner-one");
@@ -58,11 +61,11 @@ class DocumentServiceImplTest {
         Document saved = newDocument(actor, "Doc", DocumentVisibility.PRIVATE);
         DocumentResponse mapped = response(saved.getId(), actor.getId(), actor.getUsername(), "OWNER");
 
-        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(actor);
         when(documentRepository.save(any(Document.class))).thenReturn(saved);
         when(documentMapper.toResponse(saved, "OWNER")).thenReturn(mapped);
 
-        DocumentResponse created = service.create(request);
+        DocumentResponse created = service.create(request, httpRequest);
 
         ArgumentCaptor<Document> captor = ArgumentCaptor.forClass(Document.class);
         verify(documentRepository).save(captor.capture());
@@ -80,13 +83,13 @@ class DocumentServiceImplTest {
         Document document = newDocument(owner, "Readable doc", DocumentVisibility.SHARED);
         DocumentResponse mapped = response(document.getId(), owner.getId(), owner.getUsername(), "READ");
 
-        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(document.getId())).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(documentAuthorizationService.resolveEffectivePermission(document, actor)).thenReturn("READ");
         when(documentMapper.toResponse(document, "READ")).thenReturn(mapped);
 
-        DocumentResponse found = service.getById(document.getId());
+        DocumentResponse found = service.getById(document.getId(), httpRequest);
 
         verify(documentAuthorizationService).assertCanRead(document, actor);
         assertThat(found.currentUserPermission()).isEqualTo("READ");
@@ -99,14 +102,14 @@ class DocumentServiceImplTest {
         DocumentResponse mapped = response(owned.getId(), actor.getId(), actor.getUsername(), "OWNER");
         PageRequest pageable = PageRequest.of(0, 20);
 
-        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(actor);
         when(documentRepository.findOwnedByUserId(actor.getId(), "Doc", pageable))
                 .thenReturn(new PageImpl<>(List.of(owned), pageable, 1));
         when(documentRepository.findAllDetailedByIdIn(List.of(owned.getId()))).thenReturn(List.of(owned));
         when(documentAuthorizationService.resolveEffectivePermission(owned, actor)).thenReturn("OWNER");
         when(documentMapper.toResponse(owned, "OWNER")).thenReturn(mapped);
 
-        DocumentPagedList result = service.list(DocumentListScope.OWNED, "Doc", pageable);
+        DocumentPagedList result = service.list(DocumentListScope.OWNED, "Doc", pageable, httpRequest);
 
         assertThat(result.items()).containsExactly(mapped);
         assertThat(result.totalElements()).isEqualTo(1);
@@ -121,14 +124,14 @@ class DocumentServiceImplTest {
         DocumentResponse mapped = response(shared.getId(), owner.getId(), owner.getUsername(), "WRITE");
         PageRequest pageable = PageRequest.of(0, 20);
 
-        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(actor);
         when(documentRepository.findSharedWithUserId(actor.getId(), null, pageable))
                 .thenReturn(new PageImpl<>(List.of(shared), pageable, 1));
         when(documentRepository.findAllDetailedByIdIn(List.of(shared.getId()))).thenReturn(List.of(shared));
         when(documentAuthorizationService.resolveEffectivePermission(shared, actor)).thenReturn("WRITE");
         when(documentMapper.toResponse(shared, "WRITE")).thenReturn(mapped);
 
-        DocumentPagedList result = service.list(DocumentListScope.SHARED, null, pageable);
+        DocumentPagedList result = service.list(DocumentListScope.SHARED, null, pageable, httpRequest);
 
         assertThat(result.items()).containsExactly(mapped);
         assertThat(result.items().get(0).currentUserPermission()).isEqualTo("WRITE");
@@ -142,14 +145,14 @@ class DocumentServiceImplTest {
         DocumentResponse mapped = response(publicDocument.getId(), owner.getId(), owner.getUsername(), "READ");
         PageRequest pageable = PageRequest.of(0, 20);
 
-        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(actor);
         when(documentRepository.findPublicDocuments("pub", pageable))
                 .thenReturn(new PageImpl<>(List.of(publicDocument), pageable, 1));
         when(documentRepository.findAllDetailedByIdIn(List.of(publicDocument.getId()))).thenReturn(List.of(publicDocument));
         when(documentAuthorizationService.resolveEffectivePermission(publicDocument, actor)).thenReturn("READ");
         when(documentMapper.toResponse(publicDocument, "READ")).thenReturn(mapped);
 
-        DocumentPagedList result = service.list(DocumentListScope.PUBLIC, "pub", pageable);
+        DocumentPagedList result = service.list(DocumentListScope.PUBLIC, "pub", pageable, httpRequest);
 
         assertThat(result.items()).containsExactly(mapped);
         assertThat(result.items().get(0).currentUserPermission()).isEqualTo("READ");
@@ -163,14 +166,14 @@ class DocumentServiceImplTest {
         DocumentResponse mapped = response(accessible.getId(), owner.getId(), owner.getUsername(), "READ");
         PageRequest pageable = PageRequest.of(0, 20);
 
-        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(actor);
         when(documentRepository.findAccessibleByUserId(actor.getId(), null, pageable))
                 .thenReturn(new PageImpl<>(List.of(accessible), pageable, 1));
         when(documentRepository.findAllDetailedByIdIn(List.of(accessible.getId()))).thenReturn(List.of(accessible));
         when(documentAuthorizationService.resolveEffectivePermission(accessible, actor)).thenReturn("READ");
         when(documentMapper.toResponse(accessible, "READ")).thenReturn(mapped);
 
-        DocumentPagedList result = service.list(DocumentListScope.ACCESSIBLE, null, pageable);
+        DocumentPagedList result = service.list(DocumentListScope.ACCESSIBLE, null, pageable, httpRequest);
 
         assertThat(result.items()).containsExactly(mapped);
         assertThat(result.totalElements()).isEqualTo(1);
@@ -183,13 +186,13 @@ class DocumentServiceImplTest {
         UpdateDocumentRequest request = new UpdateDocumentRequest("After", "Updated", DocumentVisibility.PUBLIC);
         DocumentResponse mapped = response(existing.getId(), actor.getId(), actor.getUsername(), "OWNER");
 
-        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(actor);
         when(documentRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
         doNothing().when(documentAuthorizationService).assertOwner(existing, actor);
         when(documentRepository.save(existing)).thenReturn(existing);
         when(documentMapper.toResponse(existing, "OWNER")).thenReturn(mapped);
 
-        DocumentResponse updated = service.update(existing.getId(), request);
+        DocumentResponse updated = service.update(existing.getId(), request, httpRequest);
 
         assertThat(existing.getTitle()).isEqualTo("After");
         assertThat(existing.getContent()).isEqualTo("Updated");
@@ -202,11 +205,11 @@ class DocumentServiceImplTest {
         User actor = newUser("owner-delete");
         Document document = newDocument(actor, "Delete me", DocumentVisibility.PRIVATE);
 
-        when(currentUserProvider.requireCurrentUser()).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(actor);
         when(documentRepository.findById(document.getId())).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertOwner(document, actor);
 
-        service.delete(document.getId());
+        service.delete(document.getId(), httpRequest);
 
         verify(documentAuthorizationService).assertOwner(document, actor);
         verify(documentRepository).delete(document);

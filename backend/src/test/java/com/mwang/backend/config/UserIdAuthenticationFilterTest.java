@@ -22,9 +22,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@SuppressWarnings("deprecation")
 class UserIdAuthenticationFilterTest {
 
     @Mock
@@ -51,7 +53,7 @@ class UserIdAuthenticationFilterTest {
                 .id(userId).username("alice").email("alice@example.com").passwordHash("hash").build();
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-User-Id", userId.toString());
-        when(userProvider.requireCurrentUser()).thenReturn(user);
+        when(userProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(user);
 
         filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
 
@@ -79,7 +81,7 @@ class UserIdAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
         request.addHeader("X-User-Id", userId.toString());
-        when(userProvider.requireCurrentUser()).thenThrow(new UserNotFoundException(userId));
+        when(userProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenThrow(new UserNotFoundException(userId));
 
         filter.doFilter(request, response, new MockFilterChain());
 
@@ -106,7 +108,7 @@ class UserIdAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
         request.addHeader("X-User-Id", "not-a-uuid");
-        when(userProvider.requireCurrentUser())
+        when(userProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class)))
                 .thenThrow(new UserContextRequiredException("X-User-Id context must be a valid UUID"));
 
         filter.doFilter(request, response, new MockFilterChain());

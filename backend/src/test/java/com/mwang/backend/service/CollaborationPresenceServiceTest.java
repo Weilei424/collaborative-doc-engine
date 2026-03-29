@@ -17,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 
 import java.time.Instant;
 import java.util.List;
@@ -29,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -61,13 +63,14 @@ class CollaborationPresenceServiceTest {
         User actor = newUser("tester");
         Document document = newDocument(documentId, actor);
         PresenceUpdateRequest request = new PresenceUpdateRequest(sessionId, PresenceType.TYPING, Map.of("typing", true));
+        SimpMessageHeaderAccessor accessor = trackedAccessor(documentId, sessionId);
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findBySessionId(documentId, sessionId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> presenceService.publishPresence(documentId, request, trackedSessions(documentId, sessionId)))
+        assertThatThrownBy(() -> presenceService.publishPresence(documentId, request, accessor))
                 .isInstanceOf(CollaborationSessionNotFoundException.class);
     }
 
@@ -79,12 +82,13 @@ class CollaborationPresenceServiceTest {
         Document document = newDocument(documentId, actor);
         PresenceUpdateRequest request = new PresenceUpdateRequest(sessionId, PresenceType.TYPING, Map.of("typing", true));
         DocumentAccessDeniedException accessDeniedException = new DocumentAccessDeniedException(documentId, actor.getId());
+        SimpMessageHeaderAccessor accessor = trackedAccessor(documentId, sessionId);
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doThrow(accessDeniedException).when(documentAuthorizationService).assertCanRead(document, actor);
 
-        assertThatThrownBy(() -> presenceService.publishPresence(documentId, request, trackedSessions(documentId, sessionId)))
+        assertThatThrownBy(() -> presenceService.publishPresence(documentId, request, accessor))
                 .isEqualTo(accessDeniedException);
 
         verifyNoInteractions(collaborationSessionStore, eventPublisher);
@@ -106,13 +110,14 @@ class CollaborationPresenceServiceTest {
                 Instant.parse("2026-03-23T12:00:00Z"),
                 Instant.parse("2026-03-23T12:01:00Z")
         );
+        SimpMessageHeaderAccessor accessor = trackedAccessor(documentId, sessionId);
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findBySessionId(documentId, sessionId)).thenReturn(Optional.of(session));
 
-        assertThatThrownBy(() -> presenceService.publishPresence(documentId, request, trackedSessions(documentId, sessionId)))
+        assertThatThrownBy(() -> presenceService.publishPresence(documentId, request, accessor))
                 .isInstanceOf(CollaborationSessionAccessDeniedException.class);
 
         verifyNoInteractions(eventPublisher);
@@ -125,12 +130,15 @@ class CollaborationPresenceServiceTest {
         User actor = newUser("tester");
         Document document = newDocument(documentId, actor);
         PresenceUpdateRequest request = new PresenceUpdateRequest(sessionId, PresenceType.TYPING, Map.of("typing", true));
+        // Empty session attributes — session not tracked
+        SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+        when(accessor.getSessionAttributes()).thenReturn(Map.of());
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
 
-        assertThatThrownBy(() -> presenceService.publishPresence(documentId, request, Map.of()))
+        assertThatThrownBy(() -> presenceService.publishPresence(documentId, request, accessor))
                 .isInstanceOf(CollaborationSessionAccessDeniedException.class);
 
         verifyNoInteractions(eventPublisher);
@@ -151,13 +159,14 @@ class CollaborationPresenceServiceTest {
                 Instant.parse("2026-03-23T12:00:00Z"),
                 Instant.parse("2026-03-23T12:01:00Z")
         );
+        SimpMessageHeaderAccessor accessor = trackedAccessor(documentId, sessionId);
 
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         doNothing().when(documentAuthorizationService).assertCanRead(document, actor);
         when(collaborationSessionStore.findBySessionId(documentId, sessionId)).thenReturn(Optional.of(session));
 
-        var event = presenceService.publishPresence(documentId, request, trackedSessions(documentId, sessionId));
+        var event = presenceService.publishPresence(documentId, request, accessor);
 
         assertThat(event.documentId()).isEqualTo(documentId);
         assertThat(event.sessionId()).isEqualTo(sessionId);
@@ -168,11 +177,14 @@ class CollaborationPresenceServiceTest {
         verify(eventPublisher).publishPresenceEvent(event);
     }
 
-    private Map<String, Object> trackedSessions(UUID documentId, UUID sessionId) {
-        return Map.of(
+    private SimpMessageHeaderAccessor trackedAccessor(UUID documentId, UUID sessionId) {
+        SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+        Map<String, Object> attrs = Map.of(
                 CollaborationSessionTracking.class.getName() + ".trackedSessions",
                 List.of(new CollaborationSessionTracking.TrackedSessionRef(documentId, sessionId))
         );
+        when(accessor.getSessionAttributes()).thenReturn(attrs);
+        return accessor;
     }
 
     private User newUser(String username) {

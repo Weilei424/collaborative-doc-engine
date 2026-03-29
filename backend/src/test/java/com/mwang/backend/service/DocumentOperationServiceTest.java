@@ -29,16 +29,17 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -64,7 +65,7 @@ class DocumentOperationServiceTest {
     private UUID operationId;
     private User actor;
     private Document document;
-    private Map<String, Object> sessionAttributes;
+    private SimpMessageHeaderAccessor accessor;
     private ObjectMapper realMapper;
 
     @BeforeEach
@@ -74,15 +75,22 @@ class DocumentOperationServiceTest {
         actor = User.builder().id(UUID.randomUUID()).username("alice").build();
         document = Document.builder().id(documentId).currentVersion(0L)
                 .content("{\"children\":[]}").owner(actor).build();
-        sessionAttributes = Map.of("userId", actor.getId().toString());
         realMapper = new ObjectMapper();
+
+        accessor = mock(SimpMessageHeaderAccessor.class);
+    }
+
+    private SimpMessageHeaderAccessor accessorWithSession(String sessionId) {
+        SimpMessageHeaderAccessor acc = mock(SimpMessageHeaderAccessor.class);
+        when(acc.getSessionId()).thenReturn(sessionId);
+        return acc;
     }
 
     @Test
     void submitOperationRejectsUnauthorizedActor() throws Exception {
         // Use valid INSERT_TEXT payload so validation passes and we reach the auth check
         JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
-        when(currentUserProvider.requireCurrentUser(sessionAttributes)).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         org.mockito.Mockito.doThrow(new DocumentAccessDeniedException(documentId, actor.getId()))
                 .when(authorizationService).assertCanWrite(document, actor);
@@ -90,7 +98,7 @@ class DocumentOperationServiceTest {
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload);
 
-        assertThatThrownBy(() -> service.submitOperation(documentId, request, sessionAttributes))
+        assertThatThrownBy(() -> service.submitOperation(documentId, request, accessor))
                 .isInstanceOf(DocumentAccessDeniedException.class);
         verify(operationRepository, never()).save(any());
     }
@@ -98,7 +106,7 @@ class DocumentOperationServiceTest {
     @Test
     void submitOperationIsIdempotentForDuplicateOperationId() throws Exception {
         JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
-        when(currentUserProvider.requireCurrentUser(sessionAttributes)).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         // assertCanWrite does not throw — actor is authorized
 
@@ -120,7 +128,7 @@ class DocumentOperationServiceTest {
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload);
 
-        AcceptedOperationResponse response = service.submitOperation(documentId, request, sessionAttributes);
+        AcceptedOperationResponse response = service.submitOperation(documentId, request, accessor);
 
         assertThat(response.operationId()).isEqualTo(operationId);
         assertThat(response.serverVersion()).isEqualTo(1L);
@@ -134,7 +142,7 @@ class DocumentOperationServiceTest {
         // Simulates the race where the pre-lock idempotency check misses, but the post-lock
         // re-check finds the operation committed by a concurrent request.
         JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
-        when(currentUserProvider.requireCurrentUser(sessionAttributes)).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         // Pre-lock check: not found (concurrent request hasn't committed yet)
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
@@ -155,7 +163,7 @@ class DocumentOperationServiceTest {
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload);
 
-        AcceptedOperationResponse response = service.submitOperation(documentId, request, sessionAttributes);
+        AcceptedOperationResponse response = service.submitOperation(documentId, request, accessor);
 
         assertThat(response.operationId()).isEqualTo(operationId);
         assertThat(response.serverVersion()).isEqualTo(1L);
@@ -165,9 +173,8 @@ class DocumentOperationServiceTest {
     @Test
     void submitOperationPersistsAndReturnsAcceptedResponse() throws Exception {
         JsonNode payload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
-        Map<String, Object> attrsWithSession = new java.util.HashMap<>(sessionAttributes);
-        attrsWithSession.put("simpSessionId", "sess-abc");
-        when(currentUserProvider.requireCurrentUser(attrsWithSession)).thenReturn(actor);
+        SimpMessageHeaderAccessor accessorWithSession = accessorWithSession("sess-abc");
+        when(currentUserProvider.requireCurrentUser(accessorWithSession)).thenReturn(actor);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         // assertCanWrite does not throw — actor is authorized
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId)).thenReturn(Optional.empty());
@@ -184,7 +191,7 @@ class DocumentOperationServiceTest {
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
 
-        AcceptedOperationResponse response = service.submitOperation(documentId, request, attrsWithSession);
+        AcceptedOperationResponse response = service.submitOperation(documentId, request, accessorWithSession);
 
         assertThat(response.operationId()).isEqualTo(operationId);
         assertThat(response.serverVersion()).isEqualTo(1L);
@@ -209,7 +216,7 @@ class DocumentOperationServiceTest {
                 .actor(actor)
                 .build();
 
-        when(currentUserProvider.requireCurrentUser(sessionAttributes)).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         // assertCanWrite does not throw — actor is authorized
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId)).thenReturn(Optional.empty());
@@ -224,7 +231,7 @@ class DocumentOperationServiceTest {
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
 
-        AcceptedOperationResponse response = service.submitOperation(documentId, request, sessionAttributes);
+        AcceptedOperationResponse response = service.submitOperation(documentId, request, accessor);
 
         // Response must reflect NO_OP type and correct version
         assertThat(response.operationType()).isEqualTo(DocumentOperationType.NO_OP);
@@ -244,9 +251,9 @@ class DocumentOperationServiceTest {
     @Test
     void submitOperationPublishesDomainEventForNewOperation() throws Exception {
         JsonNode payload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
-        Map<String, Object> attrsWithSession = new java.util.HashMap<>(sessionAttributes);
-        attrsWithSession.put("simpSessionId", "sess-pub");
-        when(currentUserProvider.requireCurrentUser(attrsWithSession)).thenReturn(actor);
+        SimpMessageHeaderAccessor pubAccessor = mock(SimpMessageHeaderAccessor.class);
+        when(pubAccessor.getSessionId()).thenReturn("sess-pub");
+        when(currentUserProvider.requireCurrentUser(pubAccessor)).thenReturn(actor);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.empty());
@@ -262,7 +269,7 @@ class DocumentOperationServiceTest {
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
 
-        service.submitOperation(documentId, request, attrsWithSession);
+        service.submitOperation(documentId, request, pubAccessor);
 
         ArgumentCaptor<AcceptedOperationDomainEvent> captor =
                 ArgumentCaptor.forClass(AcceptedOperationDomainEvent.class);
@@ -277,7 +284,7 @@ class DocumentOperationServiceTest {
     @Test
     void submitOperationDoesNotPublishDomainEventForIdempotentDuplicate() throws Exception {
         JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
-        when(currentUserProvider.requireCurrentUser(sessionAttributes)).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.of(DocumentOperation.builder()
@@ -292,7 +299,7 @@ class DocumentOperationServiceTest {
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload);
 
-        service.submitOperation(documentId, request, sessionAttributes);
+        service.submitOperation(documentId, request, accessor);
 
         verify(eventPublisher, never()).publishEvent(any());
     }
@@ -305,7 +312,7 @@ class DocumentOperationServiceTest {
                 operationId, 0L, DocumentOperationType.INSERT_TEXT,
                 realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}"));
 
-        assertThatThrownBy(() -> service.submitOperation(documentId, request, sessionAttributes))
+        assertThatThrownBy(() -> service.submitOperation(documentId, request, accessor))
                 .isInstanceOf(DocumentNotFoundException.class);
         verify(authorizationService, never()).assertCanWrite(any(), any());
         verify(documentRepository, never()).findByIdWithPessimisticLock(any());
@@ -313,12 +320,12 @@ class DocumentOperationServiceTest {
 
     @Test
     void submitOperation_nullOperationType_throwsInvalidOperationException() {
-        when(currentUserProvider.requireCurrentUser(any())).thenReturn(actor);
+        when(currentUserProvider.requireCurrentUser(any(org.springframework.messaging.simp.SimpMessageHeaderAccessor.class))).thenReturn(actor);
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, null,
                 realMapper.createObjectNode().put("path", "ignored"));
 
-        assertThatThrownBy(() -> service.submitOperation(documentId, request, sessionAttributes))
+        assertThatThrownBy(() -> service.submitOperation(documentId, request, accessor))
                 .isInstanceOf(InvalidOperationException.class)
                 .hasMessageContaining("Operation type");
         verify(documentRepository, never()).findById(any());
