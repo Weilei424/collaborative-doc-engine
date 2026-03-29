@@ -35,8 +35,7 @@ public class User extends BaseEntity {
     @Column(nullable = false, unique = true, length = 100)
     private String email;
 
-    @NotBlank(message = "Password cannot be blank")
-    @Column(nullable = false, name = "password_hash")
+    @Column(name = "password_hash")
     private String passwordHash;
 
     @Size(max = 50, message = "First name cannot exceed 50 characters")
