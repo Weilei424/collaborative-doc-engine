@@ -47,6 +47,14 @@ public class CollaboratorController {
                 documentId, request.userId(), request.permission(), httpRequest);
     }
 
+    @GetMapping("/{userId}")
+    public DocumentCollaboratorSummary getCollaborator(
+            @PathVariable UUID documentId,
+            @PathVariable UUID userId,
+            HttpServletRequest httpRequest) {
+        return collaboratorManagementService.getCollaborator(documentId, userId, httpRequest);
+    }
+
     @PutMapping("/{userId}")
     public DocumentCollaboratorSummary updateCollaborator(
             @PathVariable UUID documentId,
