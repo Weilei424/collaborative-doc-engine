@@ -43,18 +43,22 @@ export function DocumentCard({ document: doc, onDeleted }: Props) {
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${VISIBILITY_COLORS[doc.visibility]}`}>
             {doc.visibility}
           </span>
-          <button
-            onClick={e => { e.stopPropagation(); navigate(`/documents/${doc.id}/settings`) }}
-            className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
-          >
-            Settings
-          </button>
-          <button
-            onClick={handleDelete}
-            className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50"
-          >
-            Delete
-          </button>
+          {doc.currentUserPermission === 'OWNER' && (
+            <>
+              <button
+                onClick={e => { e.stopPropagation(); navigate(`/documents/${doc.id}/settings`) }}
+                className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
+              >
+                Settings
+              </button>
+              <button
+                onClick={handleDelete}
+                className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50"
+              >
+                Delete
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
