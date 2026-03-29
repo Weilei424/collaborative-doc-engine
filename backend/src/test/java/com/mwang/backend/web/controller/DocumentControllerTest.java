@@ -236,6 +236,25 @@ class DocumentControllerTest {
     }
 
     @Test
+    void createDocument_blankTitle_returns400() throws Exception {
+        mockMvc.perform(post("/api/documents")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"\",\"visibility\":\"PRIVATE\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void createDocument_titleTooLong_returns400() throws Exception {
+        String longTitle = "x".repeat(256);
+        mockMvc.perform(post("/api/documents")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"" + longTitle + "\",\"visibility\":\"PRIVATE\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void disallowedReadReturns403() throws Exception {
         UUID documentId = UUID.randomUUID();
         UUID actorId = UUID.randomUUID();
