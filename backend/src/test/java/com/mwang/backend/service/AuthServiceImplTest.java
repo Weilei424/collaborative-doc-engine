@@ -14,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
@@ -63,6 +64,30 @@ class AuthServiceImplTest {
     void register_duplicateEmail_throwsEmailAlreadyExistsException() {
         when(userRepository.existsByUsername("alice")).thenReturn(false);
         when(userRepository.existsByEmail("alice@example.com")).thenReturn(true);
+        assertThatThrownBy(() -> authService.register(
+                new RegisterRequest("alice", "alice@example.com", "secret")))
+                .isInstanceOf(EmailAlreadyExistsException.class);
+    }
+
+    @Test
+    void register_concurrentDuplicateUsername_translatesConstraintViolationToUsernameAlreadyExists() {
+        when(userRepository.existsByUsername("alice")).thenReturn(false, true);
+        when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
+        when(passwordEncoder.encode(any())).thenReturn("hashed");
+        when(userRepository.save(any())).thenThrow(new DataIntegrityViolationException("duplicate key: username"));
+
+        assertThatThrownBy(() -> authService.register(
+                new RegisterRequest("alice", "alice@example.com", "secret")))
+                .isInstanceOf(UsernameAlreadyExistsException.class);
+    }
+
+    @Test
+    void register_concurrentDuplicateEmail_translatesConstraintViolationToEmailAlreadyExists() {
+        when(userRepository.existsByUsername("alice")).thenReturn(false);
+        when(userRepository.existsByEmail("alice@example.com")).thenReturn(false, true);
+        when(passwordEncoder.encode(any())).thenReturn("hashed");
+        when(userRepository.save(any())).thenThrow(new DataIntegrityViolationException("duplicate key: email"));
+
         assertThatThrownBy(() -> authService.register(
                 new RegisterRequest("alice", "alice@example.com", "secret")))
                 .isInstanceOf(EmailAlreadyExistsException.class);
