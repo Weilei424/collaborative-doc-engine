@@ -222,4 +222,29 @@ class CollaboratorControllerTest {
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void getCollaborator_existingCollaborator_returns200() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        DocumentCollaboratorSummary summary = new DocumentCollaboratorSummary(
+                userId, "alice", DocumentPermission.WRITE);
+        when(collaboratorManagementService.getCollaborator(eq(documentId), eq(userId), any())).thenReturn(summary);
+
+        mockMvc.perform(get("/api/documents/{documentId}/collaborators/{userId}", documentId, userId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(userId.toString()))
+                .andExpect(jsonPath("$.permission").value("WRITE"));
+    }
+
+    @Test
+    void getCollaborator_notFound_returns404() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(collaboratorManagementService.getCollaborator(eq(documentId), eq(userId), any()))
+                .thenThrow(new CollaboratorNotFoundException(documentId, userId));
+
+        mockMvc.perform(get("/api/documents/{documentId}/collaborators/{userId}", documentId, userId))
+                .andExpect(status().isNotFound());
+    }
 }
