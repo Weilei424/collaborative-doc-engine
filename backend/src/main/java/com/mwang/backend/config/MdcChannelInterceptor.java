@@ -7,7 +7,6 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -22,11 +21,11 @@ public class MdcChannelInterceptor implements ChannelInterceptor {
         SimpMessageHeaderAccessor accessor =
                 MessageHeaderAccessor.getAccessor(message, SimpMessageHeaderAccessor.class);
         if (accessor != null) {
-            Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
-            if (sessionAttributes != null) {
-                Object userId = sessionAttributes.get("X-User-Id");
+            // Read userId from the STOMP Principal set by UserPrincipalHandshakeHandler
+            if (accessor.getUser() != null) {
+                String userId = accessor.getUser().getName();
                 if (userId != null) {
-                    MDC.put("userId", userId.toString());
+                    MDC.put("userId", userId);
                 }
             }
             String destination = accessor.getDestination();
