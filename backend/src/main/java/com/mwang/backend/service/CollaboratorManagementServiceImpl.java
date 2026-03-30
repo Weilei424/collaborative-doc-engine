@@ -33,6 +33,7 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
     private final DocumentAuthorizationService authorizationService;
     private final CurrentUserProvider currentUserProvider;
     private final DocumentMapper documentMapper;
+    private final CollaborationBroadcastService collaborationBroadcastService;
 
     @Override
     @Transactional(readOnly = true)
@@ -118,6 +119,7 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
             throw new CollaboratorNotFoundException(documentId, targetUserId);
         }
         collaboratorRepository.deleteByDocumentIdAndUserId(documentId, targetUserId);
+        collaborationBroadcastService.broadcastAccessRevoked(documentId, targetUserId);
     }
 
     @Override
@@ -144,6 +146,7 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
         // Update ownership and persist all changes in one save
         document.setOwner(newOwner);
         documentRepository.save(document);
+        collaborationBroadcastService.broadcastAccessRevoked(documentId, oldOwner.getId());
 
         Document refreshed = requireDocument(documentId);
         return documentMapper.toResponse(refreshed, "OWNER");
