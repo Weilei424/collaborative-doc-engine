@@ -59,6 +59,39 @@ class WebSocketConfigTest {
     }
 
     @Test
+    void authorizeSubscriptionAllowsActorToSubscribeToOwnAccessTopic() {
+        UUID documentId = UUID.randomUUID();
+        User actor = actor();
+        Document document = document(documentId, actor);
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/topic/documents/" + documentId + "/access/" + actor.getId());
+        accessor.setSessionAttributes(new HashMap<>(Map.of("user", actor)));
+
+        when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
+
+        // Should complete without throwing
+        webSocketConfig.authorizeSubscription(accessor);
+    }
+
+    @Test
+    void authorizeSubscriptionRejectsSubscriptionToAnotherUsersAccessTopic() {
+        UUID documentId = UUID.randomUUID();
+        User actor = actor();
+        UUID otherUserId = UUID.randomUUID();
+        Document document = document(documentId, actor);
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/topic/documents/" + documentId + "/access/" + otherUserId);
+        accessor.setSessionAttributes(new HashMap<>(Map.of("user", actor)));
+
+        when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> webSocketConfig.authorizeSubscription(accessor))
+                .isInstanceOf(DocumentAccessDeniedException.class);
+    }
+
+    @Test
     void authorizeSubscriptionIgnoresUnprotectedDestinations() {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
         accessor.setDestination("/topic/documents/" + UUID.randomUUID() + "/unknown");
