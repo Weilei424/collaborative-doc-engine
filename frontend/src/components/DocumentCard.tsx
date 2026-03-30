@@ -40,7 +40,7 @@ export function DocumentCard({ document: doc, onDeleted, onDeleteFailed }: Props
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold truncate">{doc.title}</h3>
           <p className="text-sm text-gray-500 mt-1">
-            {doc.owner.username} · {new Date(doc.updatedAt).toLocaleDateString()}
+            {doc.owner.username} - {new Date(doc.updatedAt).toLocaleDateString()}
           </p>
         </div>
         <div className="flex items-center gap-2 ml-4 shrink-0">
