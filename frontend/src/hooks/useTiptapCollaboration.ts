@@ -76,11 +76,14 @@ export function useTiptapCollaboration({
       if (pending) {
         // Own echo — version already advanced above
         pendingOps.current.delete(op.operationId)
-        if (op.operationType === 'NO_OP' && editor) {
-          // Server reduced our op to a no-op (made redundant by a concurrent
-          // op). Revert the optimistic application by inverting the stored step.
+        const needsReconcile =
+          op.operationType === 'NO_OP' ||
+          JSON.stringify(op.transformedPayload) !== JSON.stringify(pending.req.payload)
+
+        if (needsReconcile && editor) {
           isApplyingRemote.current = true
           try {
+            // Revert the optimistic application by inverting the stored step.
             const view = editor.view
             let tr = view.state.tr
             for (let i = pending.steps.length - 1; i >= 0; i--) {
@@ -88,16 +91,17 @@ export function useTiptapCollaboration({
               tr = tr.step(step.invert(beforeDoc))
             }
             view.dispatch(tr)
+
+            // For non-NO_OP, re-apply the server's authoritative transformed payload.
+            if (op.operationType !== 'NO_OP') {
+              applyAcceptedOperation(editor, op)
+            }
           } catch (e) {
-            console.warn('[collab] Failed to revert NO_OP step — client may diverge:', e)
+            console.warn('[collab] Failed to reconcile transformed echo — client may diverge:', e)
           } finally {
             isApplyingRemote.current = false
           }
         }
-        // MVP gap: when transformedPayload differs from the sent payload for
-        // non-NO_OP echoes, the originating client does not reconcile. Full
-        // client-side OT rebase is required for correctness under high
-        // concurrency and is out of scope for MVP.
         return
       }
       if (!editor) return
@@ -239,10 +243,12 @@ function applyAcceptedOperation(editor: Editor, op: AcceptedOperationResponse): 
       break
     }
 
-    case 'SPLIT_BLOCK':
+    case 'SPLIT_BLOCK': {
       if (payload.offset == null) break
-      editor.chain().setTextSelection(payload.offset).splitBlock().run()
+      const pos = pmPos(editor.state.doc, payload.path?.[0] ?? 0, payload.offset)
+      editor.chain().setTextSelection(pos).splitBlock().run()
       break
+    }
 
     case 'MERGE_BLOCK': {
       const blockIdx: number = payload.path?.[0] ?? 0
