@@ -5,12 +5,11 @@ import com.mwang.backend.domain.DocumentOperation;
 import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.domain.DocumentVisibility;
 import com.mwang.backend.domain.User;
+import com.mwang.backend.testcontainers.AbstractRepositoryTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
 import java.util.UUID;
@@ -18,9 +17,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DataJpaTest
-@ActiveProfiles("test")
-class DocumentOperationRepositoryTest {
+class DocumentOperationRepositoryTest extends AbstractRepositoryTest {
 
     @Autowired
     private DocumentRepository documentRepository;
@@ -39,9 +36,9 @@ class DocumentOperationRepositoryTest {
         Integer currentVersionColumns = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
-                FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_NAME = 'DOCUMENTS'
-                  AND COLUMN_NAME = 'CURRENT_VERSION'
+                FROM information_schema.columns
+                WHERE table_name = 'documents'
+                  AND column_name = 'current_version'
                 """,
                 Integer.class
         );
@@ -49,8 +46,8 @@ class DocumentOperationRepositoryTest {
         Integer operationTableCount = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
-                FROM INFORMATION_SCHEMA.TABLES
-                WHERE TABLE_NAME = 'DOCUMENT_OPERATIONS'
+                FROM information_schema.tables
+                WHERE table_name = 'document_operations'
                 """,
                 Integer.class
         );
