@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { documentsApi } from '../api/documents'
 import type { Document, DocumentScope } from '../types/document'
@@ -42,6 +42,12 @@ export function DashboardPage() {
   }, [activeScope, debouncedQuery, page])
 
   useEffect(() => { fetchDocs() }, [fetchDocs])
+
+  // Always points to the latest fetchDocs so async delete-failure callbacks
+  // never call a stale closure from a previous scope/query/page.
+  const fetchDocsRef = useRef(fetchDocs)
+  useEffect(() => { fetchDocsRef.current = fetchDocs }, [fetchDocs])
+  const stableRefetch = useCallback(() => fetchDocsRef.current(), [])
 
   function handleTabChange(scope: DocumentScope) {
     setActiveScope(scope)
@@ -97,7 +103,7 @@ export function DashboardPage() {
                   key={doc.id}
                   document={doc}
                   onDeleted={(id) => setDocs(d => d.filter(x => x.id !== id))}
-                  onDeleteFailed={fetchDocs}
+                  onDeleteFailed={stableRefetch}
                 />
             ))}
           </div>
