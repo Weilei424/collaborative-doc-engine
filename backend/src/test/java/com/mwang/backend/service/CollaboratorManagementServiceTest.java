@@ -30,6 +30,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import com.mwang.backend.collaboration.AccessRevokedEvent;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -206,7 +207,7 @@ class CollaboratorManagementServiceTest {
 
         service.removeCollaborator(documentId, collaboratorUser.getId(), httpRequest);
 
-        verify(collaborationBroadcastService).broadcastAccessRevoked(documentId, collaboratorUser.getId());
+        verify(eventPublisher).publishEvent(new AccessRevokedEvent(documentId, collaboratorUser.getId()));
     }
 
     @Test
@@ -228,6 +229,6 @@ class CollaboratorManagementServiceTest {
 
         service.transferOwnership(documentId, collaboratorUser.getId(), httpRequest);
 
-        verify(collaborationBroadcastService).broadcastAccessRevoked(documentId, oldOwnerId);
+        verify(eventPublisher).publishEvent(new AccessRevokedEvent(documentId, oldOwnerId));
     }
 }
