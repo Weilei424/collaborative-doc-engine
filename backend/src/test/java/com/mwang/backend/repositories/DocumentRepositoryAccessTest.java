@@ -5,17 +5,14 @@ import com.mwang.backend.domain.DocumentCollaborator;
 import com.mwang.backend.domain.DocumentPermission;
 import com.mwang.backend.domain.DocumentVisibility;
 import com.mwang.backend.domain.User;
+import com.mwang.backend.testcontainers.AbstractRepositoryTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DataJpaTest
-@ActiveProfiles("test")
-class DocumentRepositoryAccessTest {
+class DocumentRepositoryAccessTest extends AbstractRepositoryTest {
 
     @Autowired
     private DocumentRepository documentRepository;
