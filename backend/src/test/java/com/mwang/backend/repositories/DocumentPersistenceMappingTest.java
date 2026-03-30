@@ -5,19 +5,16 @@ import com.mwang.backend.domain.DocumentOperation;
 import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.domain.DocumentVisibility;
 import com.mwang.backend.domain.User;
+import com.mwang.backend.testcontainers.AbstractRepositoryTest;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.test.context.ActiveProfiles;
 
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DataJpaTest
-@ActiveProfiles("test")
-class DocumentPersistenceMappingTest {
+class DocumentPersistenceMappingTest extends AbstractRepositoryTest {
 
     @Autowired
     private EntityManager entityManager;
