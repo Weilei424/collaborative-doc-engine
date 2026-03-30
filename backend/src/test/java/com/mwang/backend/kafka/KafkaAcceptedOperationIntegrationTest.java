@@ -2,14 +2,13 @@ package com.mwang.backend.kafka;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mwang.backend.domain.DocumentOperationType;
+import com.mwang.backend.testcontainers.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.test.context.EmbeddedKafka;
-import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -19,12 +18,8 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 
-@SpringBootTest(
-        properties = "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}"
-)
-@ActiveProfiles("test")
-@EmbeddedKafka(partitions = 1, topics = "${kafka.topics.document-operations:document-operations}")
-class KafkaAcceptedOperationIntegrationTest {
+@SpringBootTest
+class KafkaAcceptedOperationIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private KafkaTemplate<String, String> kafkaTemplate;
