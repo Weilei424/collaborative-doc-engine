@@ -33,6 +33,7 @@ public class RedisTemplateCollaborationEventPublisher implements RedisCollaborat
                 RedisCollaborationEventType.SESSION_SNAPSHOT,
                 documentId,
                 snapshot,
+                null,
                 null
         ));
     }
@@ -44,7 +45,20 @@ public class RedisTemplateCollaborationEventPublisher implements RedisCollaborat
                 RedisCollaborationEventType.PRESENCE_UPDATED,
                 event.documentId(),
                 null,
-                event
+                event,
+                null
+        ));
+    }
+
+    @Override
+    public void publishAccessRevoked(UUID documentId, UUID revokedUserId) {
+        publish(new RedisCollaborationEvent(
+                collaborationInstanceId,
+                RedisCollaborationEventType.ACCESS_REVOKED,
+                documentId,
+                null,
+                null,
+                revokedUserId
         ));
     }
 
