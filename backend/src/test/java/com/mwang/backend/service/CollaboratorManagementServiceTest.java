@@ -11,7 +11,6 @@ import com.mwang.backend.repositories.UserRepository;
 import com.mwang.backend.service.exception.CollaboratorAlreadyExistsException;
 import com.mwang.backend.service.exception.CollaboratorNotFoundException;
 import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
-import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.web.mappers.DocumentMapper;
 import com.mwang.backend.web.model.DocumentCollaboratorSummary;
 import com.mwang.backend.web.model.DocumentOwnerSummary;
@@ -21,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.util.List;
@@ -42,8 +42,7 @@ class CollaboratorManagementServiceTest {
     @Mock private DocumentAuthorizationService authorizationService;
     @Mock private CurrentUserProvider currentUserProvider;
     @Mock private DocumentMapper documentMapper;
-    @Mock private CollaborationBroadcastService collaborationBroadcastService;
-    @Mock private RedisCollaborationEventPublisher redisCollaborationEventPublisher;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     private CollaboratorManagementServiceImpl service;
     private User owner;
@@ -57,7 +56,7 @@ class CollaboratorManagementServiceTest {
         service = new CollaboratorManagementServiceImpl(
                 documentRepository, collaboratorRepository, userRepository,
                 authorizationService, currentUserProvider, documentMapper,
-                collaborationBroadcastService, redisCollaborationEventPublisher);
+                eventPublisher);
 
         documentId = UUID.randomUUID();
         owner = User.builder().id(UUID.randomUUID()).username("owner").email("o@e.com").passwordHash("h").build();
