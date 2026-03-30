@@ -196,7 +196,7 @@ class DocumentOperationConcurrencyTest extends AbstractIntegrationTest {
                 } finally {
                     doneLatch.countDown();
                 }
-            });
+            }).start();
         }
 
         startLatch.countDown();
