@@ -1,0 +1,128 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Client } from '@stomp/stompjs'
+import type { StompSubscription } from '@stomp/stompjs'
+import SockJS from 'sockjs-client'
+import type {
+  AcceptedOperationResponse,
+  PresenceEvent,
+  SessionSnapshot,
+  SubmitOperationRequest,
+} from '../types/collaboration'
+
+interface Options {
+  documentId: string
+  token: string | null
+  sessionId: string
+  onOperation: (op: AcceptedOperationResponse) => void
+  onSession: (snapshot: SessionSnapshot) => void
+  onPresence: (event: PresenceEvent) => void
+  onAccessRevoked: () => void
+}
+
+export function useCollaboration({
+  documentId,
+  token,
+  sessionId,
+  onOperation,
+  onSession,
+  onPresence,
+  onAccessRevoked,
+}: Options) {
+  const clientRef = useRef<Client | null>(null)
+  const [connected, setConnected] = useState(false)
+
+  const submitOperation = useCallback(
+    (req: SubmitOperationRequest) => {
+      clientRef.current?.publish({
+        destination: `/app/documents/${documentId}/operations.submit`,
+        body: JSON.stringify(req),
+      })
+    },
+    [documentId],
+  )
+
+  const updatePresence = useCallback(
+    (data: unknown) => {
+      clientRef.current?.publish({
+        destination: `/app/documents/${documentId}/presence.update`,
+        body: JSON.stringify({ sessionId, type: 'CURSOR', payload: data }),
+      })
+    },
+    [documentId, sessionId],
+  )
+
+  // Callbacks (onOperation, onSession, onPresence, onAccessRevoked) are not in the
+  // dependency array intentionally — reconnecting on every callback change would
+  // break the connection. Callers MUST pass stable references (useCallback or setState).
+  useEffect(() => {
+    if (!token) return
+
+    const userId = parseUserIdFromToken(token)
+
+    const client = new Client({
+      webSocketFactory: () => new SockJS(`http://${window.location.host}/ws?token=${token}`),
+      reconnectDelay: 3000,
+      onConnect: () => {
+        setConnected(true)
+        const subs: StompSubscription[] = []
+
+        client.publish({
+          destination: `/app/documents/${documentId}/sessions.join`,
+          body: JSON.stringify({ sessionId }),
+        })
+
+        subs.push(
+          client.subscribe(`/topic/documents/${documentId}/sessions`, msg =>
+            onSession(JSON.parse(msg.body)),
+          ),
+        )
+        subs.push(
+          client.subscribe(`/topic/documents/${documentId}/operations`, msg =>
+            onOperation(JSON.parse(msg.body)),
+          ),
+        )
+        subs.push(
+          client.subscribe(`/topic/documents/${documentId}/presence`, msg =>
+            onPresence(JSON.parse(msg.body)),
+          ),
+        )
+        if (userId) {
+          subs.push(
+            client.subscribe(
+              `/topic/documents/${documentId}/access/${userId}`,
+              () => onAccessRevoked(),
+            ),
+          )
+        }
+      },
+      onDisconnect: () => setConnected(false),
+    })
+
+    clientRef.current = client
+    client.activate()
+
+    return () => {
+      if (client.connected) {
+        client.publish({
+          destination: `/app/documents/${documentId}/sessions.leave`,
+          body: JSON.stringify({ sessionId }),
+        })
+      }
+      client.deactivate()
+      setConnected(false)
+      clientRef.current = null
+    }
+  }, [documentId, token])
+
+  return { connected, submitOperation, updatePresence }
+}
+
+function parseUserIdFromToken(token: string): string | null {
+  try {
+    const payload = token.split('.')[1]
+    const decoded = JSON.parse(atob(payload))
+    return decoded.sub ?? null
+  } catch {
+    return null
+  }
+}
