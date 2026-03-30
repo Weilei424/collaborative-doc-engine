@@ -10,5 +10,6 @@ public record RedisCollaborationEvent(
         RedisCollaborationEventType type,
         UUID documentId,
         CollaborationSessionSnapshot sessionSnapshot,
-        PresenceEventResponse presenceEvent) {
+        PresenceEventResponse presenceEvent,
+        UUID revokedUserId) {
 }
