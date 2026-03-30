@@ -63,7 +63,7 @@ export function DocumentSettingsPage() {
         <h1 className="text-lg font-semibold truncate">{doc.title} — Settings</h1>
       </header>
 
-      <main className="max-w-2xl mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-2xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-8">
         {doc.currentUserPermission === 'OWNER' && (
           <section>
             <h2 className="text-sm font-semibold uppercase text-gray-500 mb-3">Document</h2>
