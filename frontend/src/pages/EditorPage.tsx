@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { useAuth } from '../contexts/AuthContext'
 import { documentsApi } from '../api/documents'
 import type { Document } from '../types/document'
-import type { SessionSnapshot, SubmitOperationRequest } from '../types/collaboration'
+import type { AcceptedOperationResponse, SessionSnapshot, SubmitOperationRequest } from '../types/collaboration'
 import { useCollaboration } from '../hooks/useCollaboration'
 import { useTiptapCollaboration } from '../hooks/useTiptapCollaboration'
 import { AccessRevokedOverlay } from '../components/AccessRevokedOverlay'
@@ -23,6 +23,8 @@ export function EditorPage() {
   const sessionId = useRef(uuidv4()).current
   const currentVersion = useRef(0)
   const submitOpRef = useRef<(req: SubmitOperationRequest) => void>(() => {})
+  const onOperationRef = useRef<(op: AcceptedOperationResponse) => void>(() => {})
+  const onAccessRevokedRef = useRef<() => void>(() => {})
 
   const token = user?.token ?? null
 
@@ -60,11 +62,17 @@ export function EditorPage() {
 
   const onPresence = useCallback(() => {}, [])
 
-  // Stable submit callback that delegates to the ref — avoids circular hook dependency
+  // Stable callbacks that delegate to refs — prevents useCollaboration from
+  // reconnecting when editor-dependent callbacks change identity.
   const stableSubmitOp = useCallback(
     (req: SubmitOperationRequest) => submitOpRef.current(req),
     [],
   )
+  const stableOnOperation = useCallback(
+    (op: AcceptedOperationResponse) => onOperationRef.current(op),
+    [],
+  )
+  const stableOnAccessRevoked = useCallback(() => onAccessRevokedRef.current(), [])
 
   const { onTransaction, onAcceptedOperation } = useTiptapCollaboration({
     editor,
@@ -78,19 +86,27 @@ export function EditorPage() {
     documentId: documentId!,
     token,
     sessionId,
-    onOperation: onAcceptedOperation,
+    onOperation: stableOnOperation,
     onSession: setSessionSnapshot,
     onPresence,
-    onAccessRevoked: () => {
-      setRevoked(true)
-      editor?.setEditable(false)
-    },
+    onAccessRevoked: stableOnAccessRevoked,
   })
 
-  // Keep the ref in sync with the stable submitOperation from useCollaboration
+  // Keep refs in sync so stable wrappers always call the latest closures
   useEffect(() => {
     submitOpRef.current = submitOperation
   }, [submitOperation])
+
+  useEffect(() => {
+    onOperationRef.current = onAcceptedOperation
+  }, [onAcceptedOperation])
+
+  useEffect(() => {
+    onAccessRevokedRef.current = () => {
+      setRevoked(true)
+      editor?.setEditable(false)
+    }
+  }, [editor])
 
   // Wire Tiptap transaction events to the operation bridge
   useEffect(() => {
