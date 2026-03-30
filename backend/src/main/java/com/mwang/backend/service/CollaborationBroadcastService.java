@@ -12,4 +12,6 @@ public interface CollaborationBroadcastService {
     void broadcastPresenceEvent(UUID documentId, PresenceEventResponse event);
 
     void broadcastAcceptedOperation(UUID documentId, AcceptedOperationResponse response);
+
+    void broadcastAccessRevoked(UUID documentId, UUID revokedUserId);
 }
