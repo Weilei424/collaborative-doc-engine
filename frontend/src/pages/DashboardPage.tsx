@@ -97,7 +97,7 @@ export function DashboardPage() {
                   key={doc.id}
                   document={doc}
                   onDeleted={(id) => setDocs(d => d.filter(x => x.id !== id))}
-                  onDeleteFailed={(restored) => setDocs(d => [...d, restored])}
+                  onDeleteFailed={fetchDocs}
                 />
             ))}
           </div>
