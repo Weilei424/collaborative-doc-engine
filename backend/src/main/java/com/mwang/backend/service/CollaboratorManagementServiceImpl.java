@@ -148,7 +148,8 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
         // Update ownership and persist all changes in one save
         document.setOwner(newOwner);
         documentRepository.save(document);
-        eventPublisher.publishEvent(new AccessRevokedEvent(documentId, oldOwner.getId()));
+        // The old owner is retained as ADMIN collaborator and keeps document access.
+        // No AccessRevokedEvent is published here.
 
         Document refreshed = requireDocument(documentId);
         return documentMapper.toResponse(refreshed, "OWNER");
