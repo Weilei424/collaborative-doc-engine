@@ -86,14 +86,14 @@ export function DashboardPage() {
         <div className="mb-4">
           <input
             className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Search by title…"
+            placeholder="Search by title..."
             value={query}
             onChange={e => setQuery(e.target.value)}
           />
         </div>
 
         {loading ? (
-          <p className="text-center text-gray-400 py-12">Loading…</p>
+          <p className="text-center text-gray-400 py-12">Loading...</p>
         ) : docs.length === 0 ? (
           <p className="text-center text-gray-400 py-12">No documents found</p>
         ) : (
