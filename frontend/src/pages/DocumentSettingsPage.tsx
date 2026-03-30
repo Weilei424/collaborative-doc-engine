@@ -58,9 +58,9 @@ export function DocumentSettingsPage() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b px-6 py-4 flex items-center gap-4">
         <button onClick={() => navigate('/')} className="text-sm text-blue-600 hover:underline">
-          ← Back
+          &lt;- Back
         </button>
-        <h1 className="text-lg font-semibold truncate">{doc.title} — Settings</h1>
+        <h1 className="text-lg font-semibold truncate">{doc.title} - Settings</h1>
       </header>
 
       <main className="max-w-2xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-8">
@@ -84,7 +84,7 @@ export function DocumentSettingsPage() {
               </div>
               <button onClick={handleSave} disabled={saving}
                 className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Saving…' : 'Save changes'}
+                {saving ? 'Saving...' : 'Save changes'}
               </button>
             </div>
           </section>
@@ -111,7 +111,7 @@ export function DocumentSettingsPage() {
                 <div className="flex gap-2">
                   <div className="flex-1">
                     <UserSearchCombobox onSelect={handleAddCollaborator}
-                      placeholder="Search by username or email…" />
+                      placeholder="Search by username or email..." />
                   </div>
                   <select className="border rounded px-2 py-2 text-sm"
                     value={addPermission}
