@@ -11,6 +11,7 @@ import com.mwang.backend.repositories.UserRepository;
 import com.mwang.backend.service.exception.CollaboratorAlreadyExistsException;
 import com.mwang.backend.service.exception.CollaboratorNotFoundException;
 import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
+import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.web.mappers.DocumentMapper;
 import com.mwang.backend.web.model.DocumentCollaboratorSummary;
 import com.mwang.backend.web.model.DocumentOwnerSummary;
@@ -42,6 +43,7 @@ class CollaboratorManagementServiceTest {
     @Mock private CurrentUserProvider currentUserProvider;
     @Mock private DocumentMapper documentMapper;
     @Mock private CollaborationBroadcastService collaborationBroadcastService;
+    @Mock private RedisCollaborationEventPublisher redisCollaborationEventPublisher;
 
     private CollaboratorManagementServiceImpl service;
     private User owner;
@@ -55,7 +57,7 @@ class CollaboratorManagementServiceTest {
         service = new CollaboratorManagementServiceImpl(
                 documentRepository, collaboratorRepository, userRepository,
                 authorizationService, currentUserProvider, documentMapper,
-                collaborationBroadcastService);
+                collaborationBroadcastService, redisCollaborationEventPublisher);
 
         documentId = UUID.randomUUID();
         owner = User.builder().id(UUID.randomUUID()).username("owner").email("o@e.com").passwordHash("h").build();
