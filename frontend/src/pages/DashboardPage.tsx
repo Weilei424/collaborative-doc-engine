@@ -93,7 +93,12 @@ export function DashboardPage() {
         ) : (
           <div className="space-y-3">
             {docs.map(doc => (
-              <DocumentCard key={doc.id} document={doc} onDeleted={(id) => setDocs(d => d.filter(x => x.id !== id))} />
+              <DocumentCard
+                  key={doc.id}
+                  document={doc}
+                  onDeleted={(id) => setDocs(d => d.filter(x => x.id !== id))}
+                  onDeleteFailed={(restored) => setDocs(d => [...d, restored])}
+                />
             ))}
           </div>
         )}
