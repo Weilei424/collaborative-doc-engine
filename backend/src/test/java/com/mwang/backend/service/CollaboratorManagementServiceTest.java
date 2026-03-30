@@ -211,8 +211,7 @@ class CollaboratorManagementServiceTest {
     }
 
     @Test
-    void transferOwnership_publishesAccessRevokedEventForOldOwner() {
-        UUID oldOwnerId = owner.getId();
+    void transferOwnership_doesNotPublishAccessRevokedEventForOldOwner() {
         document.addCollaborator(collaboratorUser, DocumentPermission.WRITE);
 
         Document refreshed = Document.builder()
@@ -229,6 +228,7 @@ class CollaboratorManagementServiceTest {
 
         service.transferOwnership(documentId, collaboratorUser.getId(), httpRequest);
 
-        verify(eventPublisher).publishEvent(new AccessRevokedEvent(documentId, oldOwnerId));
+        // Old owner is retained as ADMIN — access is not revoked, no event expected
+        org.mockito.Mockito.verifyNoInteractions(eventPublisher);
     }
 }
