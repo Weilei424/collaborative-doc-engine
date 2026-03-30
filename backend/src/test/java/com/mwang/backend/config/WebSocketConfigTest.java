@@ -40,7 +40,7 @@ class WebSocketConfigTest {
     );
 
     @ParameterizedTest
-    @ValueSource(strings = {"sessions", "presence", "operations"})
+    @ValueSource(strings = {"sessions", "presence", "operations", "access/some-user-id"})
     void authorizeSubscriptionRejectsProtectedTopicWhenActorCannotReadDocument(String topicSuffix) {
         UUID documentId = UUID.randomUUID();
         User actor = actor();
