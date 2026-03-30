@@ -1,15 +1,15 @@
 package com.mwang.backend;
 
+import com.mwang.backend.testcontainers.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest
-@ActiveProfiles("test")
-class BackendApplicationTests {
+class BackendApplicationTests extends AbstractIntegrationTest {
 
     @Test
     void contextLoads() {
+        // Verifies the full Spring application context starts successfully
+        // against real Postgres, Redis, and Kafka containers.
     }
-
 }
