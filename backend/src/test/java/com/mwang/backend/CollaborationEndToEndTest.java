@@ -2,6 +2,8 @@ package com.mwang.backend;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mwang.backend.domain.DocumentOperationType;
+import com.mwang.backend.repositories.DocumentOperationRepository;
+import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.testcontainers.AbstractIntegrationTest;
 import com.mwang.backend.web.model.SubmitOperationRequest;
 import org.junit.jupiter.api.Test;
@@ -43,6 +45,12 @@ class CollaborationEndToEndTest extends AbstractIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private DocumentOperationRepository operationRepository;
+
+    @Autowired
+    private DocumentRepository documentRepository;
 
     // FALLBACK: if WebSocket handshake proves unreliable, use service layer directly —
     // inject DocumentOperationService and call submitOperation(...) with a synthetic
@@ -142,6 +150,16 @@ class CollaborationEndToEndTest extends AbstractIntegrationTest {
         assertThat(message.get("serverVersion"))
                 .as("serverVersion should be 1 for the first operation on this document")
                 .isEqualTo(1);
+
+        // Verify the operation was persisted and the document version advanced
+        assertThat(operationRepository
+                .findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(documentId, 0L))
+                .as("operation must be persisted in the database")
+                .hasSize(1);
+
+        assertThat(documentRepository.findById(documentId).orElseThrow().getCurrentVersion())
+                .as("document currentVersion must advance to 1")
+                .isEqualTo(1L);
 
         session.disconnect();
         stompClient.stop();
