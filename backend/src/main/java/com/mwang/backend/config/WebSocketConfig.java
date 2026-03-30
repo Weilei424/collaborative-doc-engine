@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private static final Pattern PROTECTED_DOCUMENT_TOPIC_PATTERN = Pattern.compile(
-            "^/topic/documents/([0-9a-fA-F-]{36})/(sessions|presence|operations)$"
+            "^/topic/documents/([0-9a-fA-F-]{36})/(sessions|presence|operations|access/[^/]+)$"
     );
 
     private final CurrentUserProvider currentUserProvider;
