@@ -36,6 +36,7 @@ class RedisCollaborationEventSubscriberTest {
                 RedisCollaborationEventType.SESSION_SNAPSHOT,
                 documentId,
                 snapshot,
+                null,
                 null
         );
 
@@ -64,7 +65,8 @@ class RedisCollaborationEventSubscriberTest {
                 RedisCollaborationEventType.PRESENCE_UPDATED,
                 documentId,
                 null,
-                event
+                event,
+                null
         ));
 
         verify(broadcastService, never()).broadcastPresenceEvent(documentId, event);
@@ -125,7 +127,7 @@ class RedisCollaborationEventSubscriberTest {
         UUID documentId = UUID.randomUUID();
         CollaborationSessionSnapshot snapshot = new CollaborationSessionSnapshot(documentId, List.of());
         RedisCollaborationEvent event = new RedisCollaborationEvent(
-                "remote-instance", RedisCollaborationEventType.SESSION_SNAPSHOT, documentId, snapshot, null);
+                "remote-instance", RedisCollaborationEventType.SESSION_SNAPSHOT, documentId, snapshot, null, null);
 
         Message message = mock(Message.class);
         when(message.getChannel()).thenReturn(RedisCollaborationChannels.EVENTS.getBytes(StandardCharsets.UTF_8));
