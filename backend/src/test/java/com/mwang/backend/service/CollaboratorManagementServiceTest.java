@@ -41,6 +41,7 @@ class CollaboratorManagementServiceTest {
     @Mock private DocumentAuthorizationService authorizationService;
     @Mock private CurrentUserProvider currentUserProvider;
     @Mock private DocumentMapper documentMapper;
+    @Mock private CollaborationBroadcastService collaborationBroadcastService;
 
     private CollaboratorManagementServiceImpl service;
     private User owner;
@@ -53,7 +54,8 @@ class CollaboratorManagementServiceTest {
     void setUp() {
         service = new CollaboratorManagementServiceImpl(
                 documentRepository, collaboratorRepository, userRepository,
-                authorizationService, currentUserProvider, documentMapper);
+                authorizationService, currentUserProvider, documentMapper,
+                collaborationBroadcastService);
 
         documentId = UUID.randomUUID();
         owner = User.builder().id(UUID.randomUUID()).username("owner").email("o@e.com").passwordHash("h").build();
@@ -194,5 +196,37 @@ class CollaboratorManagementServiceTest {
     void transferOwnership_throwsWhenTargetNotACollaborator() {
         assertThatThrownBy(() -> service.transferOwnership(documentId, collaboratorUser.getId(), httpRequest))
                 .isInstanceOf(CollaboratorNotFoundException.class);
+    }
+
+    @Test
+    void removeCollaborator_publishesAccessRevokedEvent() {
+        when(collaboratorRepository.existsByDocumentIdAndUserId(documentId, collaboratorUser.getId()))
+                .thenReturn(true);
+
+        service.removeCollaborator(documentId, collaboratorUser.getId(), httpRequest);
+
+        verify(collaborationBroadcastService).broadcastAccessRevoked(documentId, collaboratorUser.getId());
+    }
+
+    @Test
+    void transferOwnership_publishesAccessRevokedEventForOldOwner() {
+        UUID oldOwnerId = owner.getId();
+        document.addCollaborator(collaboratorUser, DocumentPermission.WRITE);
+
+        Document refreshed = Document.builder()
+                .id(documentId).title("Test Doc").owner(collaboratorUser)
+                .visibility(DocumentVisibility.PRIVATE).build();
+        when(documentRepository.findDetailedById(documentId))
+                .thenReturn(Optional.of(document))
+                .thenReturn(Optional.of(refreshed));
+        when(documentMapper.toResponse(any(Document.class), any(String.class))).thenReturn(
+                new DocumentResponse(documentId, "Test Doc", null, DocumentVisibility.PRIVATE,
+                        0L, null, null,
+                        new DocumentOwnerSummary(collaboratorUser.getId(), "collab"),
+                        List.of(), "OWNER"));
+
+        service.transferOwnership(documentId, collaboratorUser.getId(), httpRequest);
+
+        verify(collaborationBroadcastService).broadcastAccessRevoked(documentId, oldOwnerId);
     }
 }
