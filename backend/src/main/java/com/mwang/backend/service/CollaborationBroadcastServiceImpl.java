@@ -1,5 +1,6 @@
 package com.mwang.backend.service;
 
+import com.mwang.backend.collaboration.AccessRevokedEvent;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.CollaborationSessionSnapshot;
 import com.mwang.backend.web.model.PresenceEventResponse;
@@ -30,5 +31,12 @@ public class CollaborationBroadcastServiceImpl implements CollaborationBroadcast
     @Override
     public void broadcastAcceptedOperation(UUID documentId, AcceptedOperationResponse response) {
         messagingTemplate.convertAndSend("/topic/documents/" + documentId + "/operations", response);
+    }
+
+    @Override
+    public void broadcastAccessRevoked(UUID documentId, UUID revokedUserId) {
+        messagingTemplate.convertAndSend(
+                "/topic/documents/" + documentId + "/access/" + revokedUserId,
+                new AccessRevokedEvent(documentId, revokedUserId));
     }
 }
