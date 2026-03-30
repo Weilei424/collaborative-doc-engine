@@ -1,10 +1,11 @@
 import { useNavigate } from 'react-router-dom'
 import type { Document } from '../types/document'
 import { documentsApi } from '../api/documents'
+import { useToast } from '../contexts/ToastContext'
 
 interface Props {
   document: Document
-  onDeleted: () => void
+  onDeleted: (id: string) => void
 }
 
 const VISIBILITY_COLORS: Record<string, string> = {
@@ -15,15 +16,16 @@ const VISIBILITY_COLORS: Record<string, string> = {
 
 export function DocumentCard({ document: doc, onDeleted }: Props) {
   const navigate = useNavigate()
+  const { addToast } = useToast()
 
   async function handleDelete(e: React.MouseEvent) {
     e.stopPropagation()
     if (!confirm(`Delete "${doc.title}"?`)) return
     try {
       await documentsApi.delete(doc.id)
-      onDeleted()
+      onDeleted(doc.id)
     } catch {
-      alert('Failed to delete document')
+      addToast('Failed to delete document', 'error')
     }
   }
 
