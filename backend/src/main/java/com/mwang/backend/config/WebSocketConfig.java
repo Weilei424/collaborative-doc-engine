@@ -5,6 +5,7 @@ import com.mwang.backend.domain.User;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.service.CurrentUserProvider;
 import com.mwang.backend.service.DocumentAuthorizationService;
+import com.mwang.backend.service.exception.DocumentAccessDeniedException;
 import com.mwang.backend.service.exception.DocumentNotFoundException;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.Message;
@@ -94,6 +95,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         Document document = documentRepository.findDetailedById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         documentAuthorizationService.assertCanRead(document, actor);
+
+        // Access-revocation topics are private per user: only the addressed user
+        // may subscribe, even if another reader has document-read permission.
+        String accessUserId = accessTopicUserId(accessor.getDestination());
+        if (accessUserId != null && !actor.getId().toString().equals(accessUserId)) {
+            throw new DocumentAccessDeniedException(documentId, actor.getId());
+        }
     }
 
     private UUID protectedTopicDocumentId(String destination) {
@@ -107,6 +115,19 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         }
 
         return UUID.fromString(matcher.group(1));
+    }
+
+    private static final Pattern ACCESS_TOPIC_PATTERN = Pattern.compile(
+            "^/topic/documents/[0-9a-fA-F-]{36}/access/(.+)$"
+    );
+
+    /** Returns the userId segment from an access-revocation topic, or null for other topics. */
+    private String accessTopicUserId(String destination) {
+        if (destination == null) {
+            return null;
+        }
+        Matcher matcher = ACCESS_TOPIC_PATTERN.matcher(destination);
+        return matcher.matches() ? matcher.group(1) : null;
     }
 
 }
