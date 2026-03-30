@@ -1,5 +1,6 @@
 package com.mwang.backend.service;
 
+import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentCollaborator;
 import com.mwang.backend.domain.DocumentPermission;
@@ -34,6 +35,7 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
     private final CurrentUserProvider currentUserProvider;
     private final DocumentMapper documentMapper;
     private final CollaborationBroadcastService collaborationBroadcastService;
+    private final RedisCollaborationEventPublisher redisCollaborationEventPublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -120,6 +122,7 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
         }
         collaboratorRepository.deleteByDocumentIdAndUserId(documentId, targetUserId);
         collaborationBroadcastService.broadcastAccessRevoked(documentId, targetUserId);
+        redisCollaborationEventPublisher.publishAccessRevoked(documentId, targetUserId);
     }
 
     @Override
@@ -147,6 +150,7 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
         document.setOwner(newOwner);
         documentRepository.save(document);
         collaborationBroadcastService.broadcastAccessRevoked(documentId, oldOwner.getId());
+        redisCollaborationEventPublisher.publishAccessRevoked(documentId, oldOwner.getId());
 
         Document refreshed = requireDocument(documentId);
         return documentMapper.toResponse(refreshed, "OWNER");
