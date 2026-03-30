@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext'
 interface Props {
   document: Document
   onDeleted: (id: string) => void
+  onDeleteFailed: (doc: Document) => void
 }
 
 const VISIBILITY_COLORS: Record<string, string> = {
@@ -14,17 +15,18 @@ const VISIBILITY_COLORS: Record<string, string> = {
   PUBLIC: 'bg-green-100 text-green-700',
 }
 
-export function DocumentCard({ document: doc, onDeleted }: Props) {
+export function DocumentCard({ document: doc, onDeleted, onDeleteFailed }: Props) {
   const navigate = useNavigate()
   const { addToast } = useToast()
 
   async function handleDelete(e: React.MouseEvent) {
     e.stopPropagation()
     if (!confirm(`Delete "${doc.title}"?`)) return
+    onDeleted(doc.id)
     try {
       await documentsApi.delete(doc.id)
-      onDeleted(doc.id)
     } catch {
+      onDeleteFailed(doc)
       addToast('Failed to delete document', 'error')
     }
   }
