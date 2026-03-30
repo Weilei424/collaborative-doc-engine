@@ -130,7 +130,7 @@ export function EditorPage() {
     if (connected) {
       addToast('Connected', 'success')
     } else {
-      addToast('Disconnected — reconnecting…', 'error')
+      addToast('Disconnected - reconnecting...', 'error')
     }
   }, [connected, addToast])
 
@@ -139,7 +139,7 @@ export function EditorPage() {
   }
 
   if (!doc) {
-    return <div className="p-8 text-gray-400">Loading…</div>
+    return <div className="p-8 text-gray-400">Loading...</div>
   }
 
   const members = sessionSnapshot?.sessions ?? []
@@ -152,7 +152,7 @@ export function EditorPage() {
       <header className="border-b px-6 py-3 flex items-center justify-between overflow-x-auto">
         <div className="flex items-center gap-4">
           <Link to="/" className="text-sm text-blue-600 hover:underline">
-            ← Docs
+            &lt;- Docs
           </Link>
           <h1 className="text-base font-semibold truncate max-w-xs">{doc.title}</h1>
           <span
