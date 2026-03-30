@@ -10,6 +10,13 @@ import '@tiptap/extension-italic'
 import '@tiptap/extension-heading'
 import '@tiptap/extension-paragraph'
 
+interface PendingEntry {
+  req: SubmitOperationRequest
+  // ProseMirror step + the document immediately before it was applied.
+  // Used to invert the optimistic application when the server responds NO_OP.
+  steps: Array<{ step: any; beforeDoc: any }>
+}
+
 interface Options {
   editor: Editor | null
   documentId: string
@@ -24,24 +31,38 @@ export function useTiptapCollaboration({
   currentVersion,
   submitOperation,
 }: Options) {
-  const pendingOps = useRef<Map<string, SubmitOperationRequest>>(new Map())
+  const pendingOps = useRef<Map<string, PendingEntry>>(new Map())
+  // True while applying a remote (or corrective) operation so that onTransaction
+  // does not re-classify and re-submit the resulting Tiptap transaction.
+  const isApplyingRemote = useRef(false)
 
   // Called by EditorPage on each Tiptap 'transaction' event
   const onTransaction = useCallback(
     (transaction: any) => {
+      if (isApplyingRemote.current) return
       if (!transaction.docChanged || !editor) return
+
+      let beforeDoc = transaction.before
+
       for (const step of transaction.steps) {
         const stepJson = step.toJSON()
-        const classified = classifyStep(stepJson, transaction.before)
-        if (!classified) continue
-        const req: SubmitOperationRequest = {
-          operationId: uuidv4(),
-          clientSessionId: sessionId,
-          baseVersion: currentVersion.current,
-          ...classified,
+        const classified = classifyStep(stepJson, beforeDoc)
+
+        if (classified) {
+          const req: SubmitOperationRequest = {
+            operationId: uuidv4(),
+            clientSessionId: sessionId,
+            baseVersion: currentVersion.current,
+            ...classified,
+          }
+          pendingOps.current.set(req.operationId, { req, steps: [{ step, beforeDoc }] })
+          submitOperation(req)
         }
-        pendingOps.current.set(req.operationId, req)
-        submitOperation(req)
+
+        // Advance beforeDoc for the next step in this transaction
+        const result = step.apply(beforeDoc)
+        if (result.failed || !result.doc) break
+        beforeDoc = result.doc
       }
     },
     [editor, sessionId, submitOperation],
@@ -51,13 +72,41 @@ export function useTiptapCollaboration({
   const onAcceptedOperation = useCallback(
     (op: AcceptedOperationResponse) => {
       currentVersion.current = op.serverVersion
-      if (pendingOps.current.has(op.operationId)) {
-        // Own echo — drop it, version is already advanced
+      const pending = pendingOps.current.get(op.operationId)
+      if (pending) {
+        // Own echo — version already advanced above
         pendingOps.current.delete(op.operationId)
+        if (op.operationType === 'NO_OP' && editor) {
+          // Server reduced our op to a no-op (made redundant by a concurrent
+          // op). Revert the optimistic application by inverting the stored step.
+          isApplyingRemote.current = true
+          try {
+            const view = editor.view
+            let tr = view.state.tr
+            for (let i = pending.steps.length - 1; i >= 0; i--) {
+              const { step, beforeDoc } = pending.steps[i]
+              tr = tr.step(step.invert(beforeDoc))
+            }
+            view.dispatch(tr)
+          } catch (e) {
+            console.warn('[collab] Failed to revert NO_OP step — client may diverge:', e)
+          } finally {
+            isApplyingRemote.current = false
+          }
+        }
+        // MVP gap: when transformedPayload differs from the sent payload for
+        // non-NO_OP echoes, the originating client does not reconcile. Full
+        // client-side OT rebase is required for correctness under high
+        // concurrency and is out of scope for MVP.
         return
       }
       if (!editor) return
-      applyAcceptedOperation(editor, op)
+      isApplyingRemote.current = true
+      try {
+        applyAcceptedOperation(editor, op)
+      } finally {
+        isApplyingRemote.current = false
+      }
     },
     [editor],
   )
@@ -72,6 +121,10 @@ function classifyStep(
   doc: any,
 ): { operationType: OperationType; payload: unknown } | null {
   const blockIndex = (pos: number): number => doc.resolve(pos).index(0)
+  // Returns the block-relative character offset for a ProseMirror document
+  // position. The backend operates on block-relative offsets, not absolute
+  // ProseMirror positions.
+  const blockOffset = (pos: number): number => pos - doc.resolve(pos).start(1)
 
   if (stepJson.stepType === 'replace') {
     const from: number = stepJson.from
@@ -87,7 +140,7 @@ function classifyStep(
     if (openStart > 0 && openEnd > 0) {
       return {
         operationType: 'SPLIT_BLOCK',
-        payload: { path: [blockIndex(from)], offset: from },
+        payload: { path: [blockIndex(from)], offset: blockOffset(from) },
       }
     }
 
@@ -121,7 +174,7 @@ function classifyStep(
       if (!text) return null
       return {
         operationType: 'INSERT_TEXT',
-        payload: { path: [blockIndex(from)], offset: from, text },
+        payload: { path: [blockIndex(from)], offset: blockOffset(from), text },
       }
     }
 
@@ -129,20 +182,21 @@ function classifyStep(
     if (from < to && emptySlice) {
       return {
         operationType: 'DELETE_RANGE',
-        payload: { path: [blockIndex(from)], from, to },
+        payload: { path: [blockIndex(from)], offset: blockOffset(from), length: to - from },
       }
     }
   }
 
   // 6. FORMAT_RANGE — addMark step (bold, italic)
   if (stepJson.stepType === 'addMark') {
+    const from: number = stepJson.from
     return {
       operationType: 'FORMAT_RANGE',
       payload: {
-        path: [blockIndex(stepJson.from)],
-        from: stepJson.from,
-        to: stepJson.to,
-        format: { [stepJson.mark.type]: true },
+        path: [blockIndex(from)],
+        offset: blockOffset(from),
+        length: stepJson.to - from,
+        attributes: { [stepJson.mark.type]: true },
       },
     }
   }
@@ -161,32 +215,29 @@ function applyAcceptedOperation(editor: Editor, op: AcceptedOperationResponse): 
   if (!payload) return
 
   switch (op.operationType) {
-    case 'INSERT_TEXT':
+    case 'INSERT_TEXT': {
       if (payload.offset == null || payload.text == null) break
-      editor.chain().insertContentAt(payload.offset, payload.text).run()
+      const pos = pmPos(editor.state.doc, payload.path?.[0] ?? 0, payload.offset)
+      editor.chain().insertContentAt(pos, payload.text).run()
       break
+    }
 
-    case 'DELETE_RANGE':
-      if (payload.from == null || payload.to == null) break
-      editor.chain().deleteRange({ from: payload.from, to: payload.to }).run()
+    case 'DELETE_RANGE': {
+      if (payload.offset == null || payload.length == null) break
+      const from = pmPos(editor.state.doc, payload.path?.[0] ?? 0, payload.offset)
+      editor.chain().deleteRange({ from, to: from + payload.length }).run()
       break
+    }
 
-    case 'FORMAT_RANGE':
-      if (payload.format?.bold) {
-        editor
-          .chain()
-          .setTextSelection({ from: payload.from, to: payload.to })
-          .setBold()
-          .run()
-      }
-      if (payload.format?.italic) {
-        editor
-          .chain()
-          .setTextSelection({ from: payload.from, to: payload.to })
-          .setItalic()
-          .run()
-      }
+    case 'FORMAT_RANGE': {
+      if (payload.offset == null || payload.length == null) break
+      const from = pmPos(editor.state.doc, payload.path?.[0] ?? 0, payload.offset)
+      const to = from + payload.length
+      const attrs = (payload.attributes ?? {}) as Record<string, boolean>
+      if (attrs.bold) editor.chain().setTextSelection({ from, to }).setBold().run()
+      if (attrs.italic) editor.chain().setTextSelection({ from, to }).setItalic().run()
       break
+    }
 
     case 'SPLIT_BLOCK':
       if (payload.offset == null) break
@@ -232,6 +283,18 @@ function applyAcceptedOperation(editor: Editor, op: AcceptedOperationResponse): 
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// Converts a block index + block-relative character offset to an absolute
+// ProseMirror document position. The block at index 0 has its content starting
+// at position 1 (after its opening token). Each block's opening and closing
+// tokens each consume one position unit.
+function pmPos(doc: any, blockIdx: number, offset: number): number {
+  let pos = 0
+  for (let i = 0; i < blockIdx; i++) {
+    pos += doc.child(i).nodeSize
+  }
+  return pos + 1 + offset // +1 to pass the block's opening token
+}
 
 function extractText(content: any[]): string {
   return content
