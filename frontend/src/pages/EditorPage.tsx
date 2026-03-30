@@ -4,6 +4,7 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { v4 as uuidv4 } from 'uuid'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 import { documentsApi } from '../api/documents'
 import type { Document } from '../types/document'
 import type { AcceptedOperationResponse, SessionSnapshot, SubmitOperationRequest } from '../types/collaboration'
@@ -16,6 +17,7 @@ import { SessionPanel } from '../components/SessionPanel'
 export function EditorPage() {
   const { id: documentId } = useParams<{ id: string }>()
   const { user } = useAuth()
+  const { addToast } = useToast()
   const [doc, setDoc] = useState<Document | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sessionSnapshot, setSessionSnapshot] = useState<SessionSnapshot | null>(null)
@@ -25,6 +27,7 @@ export function EditorPage() {
   const submitOpRef = useRef<(req: SubmitOperationRequest) => void>(() => {})
   const onOperationRef = useRef<(op: AcceptedOperationResponse) => void>(() => {})
   const onAccessRevokedRef = useRef<() => void>(() => {})
+  const hasMounted = useRef(false)
 
   const token = user?.token ?? null
 
@@ -118,6 +121,19 @@ export function EditorPage() {
     }
   }, [editor, onTransaction])
 
+  // Show connection state toasts
+  useEffect(() => {
+    if (!hasMounted.current) {
+      hasMounted.current = true
+      return
+    }
+    if (connected) {
+      addToast('Connected', 'success')
+    } else {
+      addToast('Disconnected — reconnecting…', 'error')
+    }
+  }, [connected, addToast])
+
   if (error) {
     return <div className="p-8 text-red-500">{error}</div>
   }
@@ -133,7 +149,7 @@ export function EditorPage() {
     <div className="min-h-screen flex flex-col bg-white">
       {revoked && <AccessRevokedOverlay />}
 
-      <header className="border-b px-6 py-3 flex items-center justify-between">
+      <header className="border-b px-6 py-3 flex items-center justify-between overflow-x-auto">
         <div className="flex items-center gap-4">
           <Link to="/" className="text-sm text-blue-600 hover:underline">
             ← Docs
