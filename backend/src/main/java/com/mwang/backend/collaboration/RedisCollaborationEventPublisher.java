@@ -12,4 +12,6 @@ public interface RedisCollaborationEventPublisher {
     void publishPresenceEvent(PresenceEventResponse event);
 
     void publishAcceptedOperation(UUID documentId, AcceptedOperationResponse response);
+
+    void publishAccessRevoked(UUID documentId, UUID revokedUserId);
 }
