@@ -53,12 +53,13 @@ export function DashboardPage() {
       <header className="bg-white border-b px-6 py-4 flex justify-between items-center">
         <h1 className="text-xl font-bold">Documents</h1>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-600">{user?.username}</span>
+          <span className="hidden md:inline text-sm text-gray-600">{user?.username}</span>
           <button onClick={() => setShowCreate(true)}
             className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
-            New document
+            <span className="hidden md:inline">New document</span>
+            <span className="md:hidden">+</span>
           </button>
-          <button onClick={logout} className="text-sm text-red-500 hover:underline">Sign out</button>
+          <button onClick={logout} className="hidden md:inline text-sm text-red-500 hover:underline">Sign out</button>
         </div>
       </header>
 
@@ -92,7 +93,7 @@ export function DashboardPage() {
         ) : (
           <div className="space-y-3">
             {docs.map(doc => (
-              <DocumentCard key={doc.id} document={doc} onDeleted={fetchDocs} />
+              <DocumentCard key={doc.id} document={doc} onDeleted={(id) => setDocs(d => d.filter(x => x.id !== id))} />
             ))}
           </div>
         )}
