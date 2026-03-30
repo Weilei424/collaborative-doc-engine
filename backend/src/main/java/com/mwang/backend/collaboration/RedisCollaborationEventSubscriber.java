@@ -37,6 +37,11 @@ public class RedisCollaborationEventSubscriber implements MessageListener {
 
         if (event.type() == RedisCollaborationEventType.PRESENCE_UPDATED && event.presenceEvent() != null) {
             collaborationBroadcastService.broadcastPresenceEvent(event.documentId(), event.presenceEvent());
+            return;
+        }
+
+        if (event.type() == RedisCollaborationEventType.ACCESS_REVOKED && event.revokedUserId() != null) {
+            collaborationBroadcastService.broadcastAccessRevoked(event.documentId(), event.revokedUserId());
         }
     }
 
