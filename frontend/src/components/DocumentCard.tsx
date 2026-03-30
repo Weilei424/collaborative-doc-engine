@@ -6,7 +6,7 @@ import { useToast } from '../contexts/ToastContext'
 interface Props {
   document: Document
   onDeleted: (id: string) => void
-  onDeleteFailed: (doc: Document) => void
+  onDeleteFailed: () => void
 }
 
 const VISIBILITY_COLORS: Record<string, string> = {
@@ -26,7 +26,7 @@ export function DocumentCard({ document: doc, onDeleted, onDeleteFailed }: Props
     try {
       await documentsApi.delete(doc.id)
     } catch {
-      onDeleteFailed(doc)
+      onDeleteFailed()
       addToast('Failed to delete document', 'error')
     }
   }
