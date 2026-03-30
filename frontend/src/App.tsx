@@ -5,6 +5,7 @@ import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DocumentSettingsPage } from './pages/DocumentSettingsPage'
+import { EditorPage } from './pages/EditorPage'
 
 function App() {
   return (
@@ -25,7 +26,7 @@ function App() {
             <PrivateRoute><DocumentSettingsPage /></PrivateRoute>
           } />
           <Route path="/documents/:id" element={
-            <PrivateRoute><div className="p-8 text-gray-400">Editor coming in Phase 11.</div></PrivateRoute>
+            <PrivateRoute><EditorPage /></PrivateRoute>
           } />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
