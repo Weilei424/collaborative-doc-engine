@@ -1,6 +1,6 @@
 package com.mwang.backend.service;
 
-import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
+import com.mwang.backend.collaboration.AccessRevokedEvent;
 import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentCollaborator;
 import com.mwang.backend.domain.DocumentPermission;
@@ -18,6 +18,7 @@ import com.mwang.backend.web.model.DocumentCollaboratorSummary;
 import com.mwang.backend.web.model.DocumentResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,8 +35,7 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
     private final DocumentAuthorizationService authorizationService;
     private final CurrentUserProvider currentUserProvider;
     private final DocumentMapper documentMapper;
-    private final CollaborationBroadcastService collaborationBroadcastService;
-    private final RedisCollaborationEventPublisher redisCollaborationEventPublisher;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -121,8 +121,7 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
             throw new CollaboratorNotFoundException(documentId, targetUserId);
         }
         collaboratorRepository.deleteByDocumentIdAndUserId(documentId, targetUserId);
-        collaborationBroadcastService.broadcastAccessRevoked(documentId, targetUserId);
-        redisCollaborationEventPublisher.publishAccessRevoked(documentId, targetUserId);
+        eventPublisher.publishEvent(new AccessRevokedEvent(documentId, targetUserId));
     }
 
     @Override
@@ -149,8 +148,7 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
         // Update ownership and persist all changes in one save
         document.setOwner(newOwner);
         documentRepository.save(document);
-        collaborationBroadcastService.broadcastAccessRevoked(documentId, oldOwner.getId());
-        redisCollaborationEventPublisher.publishAccessRevoked(documentId, oldOwner.getId());
+        eventPublisher.publishEvent(new AccessRevokedEvent(documentId, oldOwner.getId()));
 
         Document refreshed = requireDocument(documentId);
         return documentMapper.toResponse(refreshed, "OWNER");
