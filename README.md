@@ -185,7 +185,7 @@ flowchart TB
 
 ## Performance & Scalability
 
-This system was benchmarked using :contentReference[oaicite:0]{index=0} to evaluate both baseline workloads and high-contention real-time collaboration scenarios.
+This system was benchmarked using k6 to evaluate both baseline workloads and high-contention real-time collaboration scenarios.
 
 ### Key Results
 
@@ -202,6 +202,18 @@ This system was benchmarked using :contentReference[oaicite:0]{index=0} to evalu
 | Comfortable concurrency (p50 < 500ms)   | ~30–40 users                       |
 | Latency > 1s (p50)                      | ~50–60 users                       |
 | Hard failure point                      | Not reached (0% errors at 100 VUs) |
+
+### Native Infrastructure Estimate
+
+These benchmarks were recorded in a local Docker-based environment. On tuned native infrastructure with faster disk, lower virtualization overhead, and cleaner inter-service networking, the same shared-document contention workload would likely perform better.
+
+This is an estimate, not a measured benchmark:
+
+| Metric                  | Observed in Local Docker | Estimated on Tuned Native Infra |
+|-------------------------|--------------------------|---------------------------------|
+| Shared-doc throughput   | 44 ops/sec               | ~60-90 ops/sec                  |
+| Shared-doc p95 latency  | 3.05 s                   | ~1.5-2.4 s                      |
+| Shared-doc error rate   | 0%                       | expected to remain 0%           |
 
 ### Summary
 

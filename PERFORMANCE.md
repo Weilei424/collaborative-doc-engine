@@ -31,6 +31,18 @@ Benchmarks were conducted using k6.
 | Throughput       | 261 ops/sec       | 44 ops/sec               |
 | Error Rate       | 0%                | 0%                       |
 
+### Estimated Native-Infrastructure Range
+
+These results were measured in a local Docker-based environment. On tuned native infrastructure with faster disk, lower virtualization overhead, and cleaner service-to-service networking, the same shared-document contention workload would likely improve.
+
+This is an estimate, not a measured benchmark:
+
+| Metric                  | Observed in Local Docker | Estimated on Tuned Native Infra |
+|-------------------------|--------------------------|---------------------------------|
+| Shared-doc throughput   | 44 ops/sec               | ~60-90 ops/sec                  |
+| Shared-doc p95 latency  | 3.05 s                   | ~1.5-2.4 s                      |
+| Shared-doc error rate   | 0%                       | expected to remain 0%           |
+
 ---
 
 ## Key Findings
