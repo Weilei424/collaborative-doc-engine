@@ -48,25 +48,34 @@ Enable multiple users to read, edit, and share structured documents in real time
 ## Data Flow Diagram
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryTextColor': '#ffffff',
+    'lineColor': '#5b6875',
+    'edgeLabelBackground': '#ffffff'
+  },
+  'themeCSS': '.edgeLabel rect { fill: #ffffff !important; opacity: 1 !important; } .edgeLabel span, .edgeLabel p, .edgeLabel foreignObject { color: #111111 !important; }'
+}}%%
 flowchart LR
-    C[Clients<br/>React UI + SockJS/STOMP<br/>REST + WebSocket]
-    R[REST Layer<br/>Auth, CRUD, sharing, search<br/>Document controllers]
-    W[Collaboration Layer<br/>Join, presence, submit op<br/>ACL + session checks]
-    S[Spring Services<br/>DocumentService<br/>CollaborationSessionService<br/>CollaborationPresenceService<br/>DocumentOperationService<br/>Authorization, idempotency, transform and fanout<br/>Lock document, assign next version, persist projection + op log]
-    P[(PostgreSQL<br/>Documents<br/>Collaborators + ops)]
-    Redis[(Redis<br/>Low-latency fanout<br/>Sessions + presence)]
-    K[(Kafka<br/>Accepted ops stream<br/>Replay + audit)]
-    O[Outputs<br/>Topic broadcasts to connected collaborators<br/>Async consumers]
+    C["<b>Clients</b><br/>React UI + SockJS/STOMP<br/>REST + WebSocket"]
+    R["<b>REST Layer</b><br/>Auth, CRUD, sharing, search<br/>Document controllers"]
+    W["<b>Collaboration Layer</b><br/>Join, presence, submit op<br/>ACL + session checks"]
+    S["<b>Spring Services</b><br/>DocumentService<br/>CollaborationSessionService<br/>CollaborationPresenceService<br/>DocumentOperationService<br/>Authorization, idempotency, transform and fanout<br/>Lock document, assign next version, persist projection + op log"]
+    P["<b>PostgreSQL</b><br/>Documents<br/>Collaborators + ops"]
+    Redis["<b>Redis</b><br/>Low-latency fanout<br/>Sessions + presence"]
+    K["<b>Kafka</b><br/>Accepted ops stream<br/>Replay + audit"]
+    O["<b>Outputs</b><br/>Topic broadcasts to connected collaborators<br/>Async consumers"]
 
-    C --> R
-    C --> W
-    R --> S
-    W --> S
-    S --> P
-    S --> Redis
-    S --> K
-    S --> O
-    Redis -. fanout to other backend instances .-> O
+    C -->|CRUD and fetch| R
+    C -->|join, presence, submit op| W
+    R -->|server-authoritative ordering| S
+    W -->|validate ACL and session state| S
+    S -->|persist projection and op log| P
+    S -->|hot-path fanout| Redis
+    S -->|after-commit durable stream| K
+    S -->|broadcast accepted operation| O
+    Redis -.->|fanout to other backend instances| O
 
     classDef data fill:#4299e1,stroke:#2b6cb0,color:#ffffff;
     classDef process fill:#ed8936,stroke:#c05621,color:#ffffff;
@@ -104,16 +113,26 @@ The collaboration hot path stays server-controlled: a client submits an operatio
 ## System Architecture
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryTextColor': '#ffffff',
+    'lineColor': '#5b6875',
+    'edgeLabelBackground': '#ffffff'
+  },
+  'themeCSS': '.edgeLabel rect { fill: #ffffff !important; opacity: 1 !important; } .edgeLabel span, .edgeLabel p, .edgeLabel foreignObject { color: #111111 !important; }'
+}}%%
 flowchart TB
-    Client[Client Layer<br/>React + Vite frontend<br/>REST API calls<br/>SockJS/STOMP collaboration transport]
-    API[API and Messaging Layer<br/>DocumentController<br/>CollaboratorController<br/>AuthController<br/>CollaborationController<br/>WebSocketConfig]
-    App[Application Service Layer<br/>DocumentService<br/>DocumentOperationService<br/>CollaborationSessionService<br/>PresenceService<br/>AuthorizationService<br/>OperationTransformer<br/>CurrentUserProvider<br/>SimpMessagingTemplate fanout]
-    Data[Data Layer<br/>PostgreSQL + Flyway + JPA<br/>Document aggregate, collaborators, immutable operation history]
-    Platform[Platform and Coordination Layer<br/>Redis Pub/Sub for low-latency fanout<br/>Kafka for durable stream and replay<br/>Docker Compose local runtime<br/>Actuator health and Prometheus exposure]
+    Client["<b>Client Layer</b><br/>React + Vite frontend<br/>REST API calls<br/>SockJS/STOMP collaboration transport"]
+    API["<b>API and Messaging Layer</b><br/>DocumentController<br/>CollaboratorController<br/>AuthController<br/>CollaborationController<br/>WebSocketConfig"]
+    App["<b>Application Service Layer</b><br/>DocumentService<br/>DocumentOperationService<br/>CollaborationSessionService<br/>PresenceService<br/>AuthorizationService<br/>OperationTransformer<br/>CurrentUserProvider<br/>SimpMessagingTemplate fanout"]
+    Data["<b>Data Layer</b><br/>PostgreSQL + Flyway + JPA<br/>Document aggregate, collaborators, immutable operation history"]
+    Platform["<b>Platform and Coordination Layer</b><br/>Redis Pub/Sub for low-latency fanout<br/>Kafka for durable stream and replay<br/>Docker Compose local runtime<br/>Actuator health and Prometheus exposure"]
 
-    Client --> API --> App
-    App --> Data
-    App --> Platform
+    Client -->|REST and WebSocket ingress| API
+    API -->|invoke services and authorization| App
+    App -->|durable state| Data
+    App -->|fanout, streaming, runtime coordination| Platform
 
     classDef data fill:#4299e1,stroke:#2b6cb0,color:#ffffff;
     classDef process fill:#ed8936,stroke:#c05621,color:#ffffff;
