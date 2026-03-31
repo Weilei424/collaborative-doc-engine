@@ -292,11 +292,3 @@ cd backend
 ```
 
 Note: `RedisAcceptedOperationFanoutTest` is skipped without Docker via `@Testcontainers(disabledWithoutDocker = true)`.
-
-## Design Decisions
-
-- **Server-authoritative OT over CRDT**: deterministic server ordering keeps the conflict path simple and auditable; CRDT generality is not needed for the MVP operation set.
-- **Pessimistic lock for version slot assignment**: `SELECT FOR UPDATE` on the document row serializes concurrent submits without optimistic retry loops.
-- **Redis vs Kafka responsibility split**: Redis is for speed and hot-path fanout; Kafka is for durability and downstream consumers.
-- **H2 in tests, PostgreSQL in production**: keeps the test suite fast and self-contained while Flyway validates schema shape.
-- **Pragmatic MVP identity model**: `X-User-Id` remains convenient for local and portfolio use, with JWT already present as the clearer production direction.
