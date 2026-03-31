@@ -47,78 +47,37 @@ Enable multiple users to read, edit, and share structured documents in real time
 
 ## Data Flow Diagram
 
-<svg viewBox="0 0 1240 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="data-flow-title">
-  <title id="data-flow-title">Collaborative document engine data flow</title>
-  <defs>
-    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#666666"/>
-    </marker>
-  </defs>
+```mermaid
+flowchart LR
+    C[Clients<br/>React UI + SockJS/STOMP<br/>REST + WebSocket]
+    R[REST Layer<br/>Auth, CRUD, sharing, search<br/>Document controllers]
+    W[Collaboration Layer<br/>Join, presence, submit op<br/>ACL + session checks]
+    S[Spring Services<br/>DocumentService<br/>CollaborationSessionService<br/>CollaborationPresenceService<br/>DocumentOperationService<br/>Authorization, idempotency, transform and fanout<br/>Lock document, assign next version, persist projection + op log]
+    P[(PostgreSQL<br/>Documents<br/>Collaborators + ops)]
+    Redis[(Redis<br/>Low-latency fanout<br/>Sessions + presence)]
+    K[(Kafka<br/>Accepted ops stream<br/>Replay + audit)]
+    O[Outputs<br/>Topic broadcasts to connected collaborators<br/>Async consumers]
 
-  <rect x="60" y="240" width="180" height="104" rx="16" fill="#4299e1"/>
-  <text x="150" y="280" text-anchor="middle" fill="white" font-size="20" font-weight="700">Clients</text>
-  <text x="150" y="306" text-anchor="middle" fill="white" font-size="13">React UI + SockJS/STOMP</text>
-  <text x="150" y="325" text-anchor="middle" fill="white" font-size="13">REST + WebSocket</text>
+    C --> R
+    C --> W
+    R --> S
+    W --> S
+    S --> P
+    S --> Redis
+    S --> K
+    S --> O
+    Redis -. fanout to other backend instances .-> O
 
-  <rect x="320" y="90" width="220" height="106" rx="16" fill="#ed8936"/>
-  <text x="430" y="132" text-anchor="middle" fill="white" font-size="19" font-weight="700">REST Layer</text>
-  <text x="430" y="158" text-anchor="middle" fill="white" font-size="13">Auth, CRUD, sharing, search</text>
-  <text x="430" y="177" text-anchor="middle" fill="white" font-size="13">Document controllers</text>
+    classDef data fill:#4299e1,stroke:#2b6cb0,color:#ffffff;
+    classDef process fill:#ed8936,stroke:#c05621,color:#ffffff;
+    classDef service fill:#9f7aea,stroke:#6b46c1,color:#ffffff;
+    classDef durable fill:#48bb78,stroke:#2f855a,color:#ffffff;
 
-  <rect x="320" y="260" width="220" height="120" rx="16" fill="#ed8936"/>
-  <text x="430" y="303" text-anchor="middle" fill="white" font-size="19" font-weight="700">Collaboration Layer</text>
-  <text x="430" y="329" text-anchor="middle" fill="white" font-size="13">Join, presence, submit op</text>
-  <text x="430" y="348" text-anchor="middle" fill="white" font-size="13">ACL + session checks</text>
-
-  <rect x="640" y="90" width="280" height="290" rx="18" fill="#9f7aea"/>
-  <text x="780" y="132" text-anchor="middle" fill="white" font-size="19" font-weight="700">Spring Services</text>
-  <text x="780" y="160" text-anchor="middle" fill="white" font-size="13">DocumentService</text>
-  <text x="780" y="184" text-anchor="middle" fill="white" font-size="13">CollaborationSessionService</text>
-  <text x="780" y="208" text-anchor="middle" fill="white" font-size="13">CollaborationPresenceService</text>
-  <text x="780" y="232" text-anchor="middle" fill="white" font-size="13">DocumentOperationService</text>
-  <text x="780" y="268" text-anchor="middle" fill="white" font-size="13">Authorization, idempotency,</text>
-  <text x="780" y="287" text-anchor="middle" fill="white" font-size="13">transform and fanout</text>
-  <text x="780" y="317" text-anchor="middle" fill="white" font-size="13">Locks document and assigns</text>
-  <text x="780" y="336" text-anchor="middle" fill="white" font-size="13">next server version</text>
-  <text x="780" y="365" text-anchor="middle" fill="white" font-size="13">Persists projection + op log</text>
-
-  <rect x="1000" y="70" width="170" height="118" rx="16" fill="#48bb78"/>
-  <text x="1085" y="112" text-anchor="middle" fill="white" font-size="19" font-weight="700">PostgreSQL</text>
-  <text x="1085" y="138" text-anchor="middle" fill="white" font-size="13">Documents</text>
-  <text x="1085" y="157" text-anchor="middle" fill="white" font-size="13">Collaborators + ops</text>
-
-  <rect x="1000" y="232" width="170" height="118" rx="16" fill="#4299e1"/>
-  <text x="1085" y="274" text-anchor="middle" fill="white" font-size="19" font-weight="700">Redis</text>
-  <text x="1085" y="300" text-anchor="middle" fill="white" font-size="13">Low-latency fanout</text>
-  <text x="1085" y="319" text-anchor="middle" fill="white" font-size="13">Sessions + presence</text>
-
-  <rect x="1000" y="394" width="170" height="118" rx="16" fill="#48bb78"/>
-  <text x="1085" y="436" text-anchor="middle" fill="white" font-size="19" font-weight="700">Kafka</text>
-  <text x="1085" y="462" text-anchor="middle" fill="white" font-size="13">Accepted ops stream</text>
-  <text x="1085" y="481" text-anchor="middle" fill="white" font-size="13">Replay + audit</text>
-
-  <rect x="640" y="450" width="280" height="108" rx="16" fill="#48bb78"/>
-  <text x="780" y="490" text-anchor="middle" fill="white" font-size="19" font-weight="700">Outputs</text>
-  <text x="780" y="516" text-anchor="middle" fill="white" font-size="13">Topic broadcasts to connected</text>
-  <text x="780" y="535" text-anchor="middle" fill="white" font-size="13">collaborators and async consumers</text>
-
-  <path d="M240,265 L320,160" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
-  <path d="M240,318 L320,320" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
-  <path d="M540,145 L640,145" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
-  <path d="M540,320 L640,320" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
-  <path d="M920,130 L1000,130" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
-  <path d="M920,285 L1000,285" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
-  <path d="M920,350 C960,385 972,415 1000,450" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
-  <path d="M780,380 L780,450" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
-  <path d="M1000,285 C930,285 920,475 920,504" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
-  <path d="M1000,453 L920,504" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
-  <path d="M1000,285 C880,230 560,500 240,344" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)" stroke-dasharray="10 7"/>
-
-  <text x="688" y="62" fill="#666666" font-size="13">Server-authoritative ordering and persistence</text>
-  <text x="915" y="220" fill="#666666" font-size="13">Hot-path fanout</text>
-  <text x="912" y="386" fill="#666666" font-size="13">After-commit durable stream</text>
-  <text x="165" y="374" fill="#666666" font-size="13">Subscribers receive sessions, presence, accepted ops</text>
-</svg>
+    class C,Redis data;
+    class R,W process;
+    class S service;
+    class P,K,O durable;
+```
 
 The collaboration hot path stays server-controlled: a client submits an operation with `operationId` and `baseVersion`, the backend validates access, transforms as needed, persists the accepted result, then publishes to Redis for low-latency fanout and Kafka for durability.
 
@@ -144,39 +103,28 @@ The collaboration hot path stays server-controlled: a client submits an operatio
 
 ## System Architecture
 
-<svg viewBox="0 0 1120 580" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="layered-title">
-  <title id="layered-title">Layered architecture diagram</title>
+```mermaid
+flowchart TB
+    Client[Client Layer<br/>React + Vite frontend<br/>REST API calls<br/>SockJS/STOMP collaboration transport]
+    API[API and Messaging Layer<br/>DocumentController<br/>CollaboratorController<br/>AuthController<br/>CollaborationController<br/>WebSocketConfig]
+    App[Application Service Layer<br/>DocumentService<br/>DocumentOperationService<br/>CollaborationSessionService<br/>PresenceService<br/>AuthorizationService<br/>OperationTransformer<br/>CurrentUserProvider<br/>SimpMessagingTemplate fanout]
+    Data[Data Layer<br/>PostgreSQL + Flyway + JPA<br/>Document aggregate, collaborators, immutable operation history]
+    Platform[Platform and Coordination Layer<br/>Redis Pub/Sub for low-latency fanout<br/>Kafka for durable stream and replay<br/>Docker Compose local runtime<br/>Actuator health and Prometheus exposure]
 
-  <rect x="70" y="40" width="980" height="78" rx="22" fill="#4299e1"/>
-  <text x="550" y="73" text-anchor="middle" fill="white" font-size="22" font-weight="700">Client Layer</text>
-  <text x="550" y="96" text-anchor="middle" fill="white" font-size="14">React + Vite frontend, REST API calls, SockJS/STOMP collaboration transport</text>
+    Client --> API --> App
+    App --> Data
+    App --> Platform
 
-  <rect x="70" y="142" width="980" height="90" rx="22" fill="#ed8936"/>
-  <text x="550" y="168" text-anchor="middle" fill="white" font-size="22" font-weight="700">API and Messaging Layer</text>
-  <text x="550" y="192" text-anchor="middle" fill="white" font-size="14">DocumentController, CollaboratorController, AuthController, CollaborationController, WebSocketConfig</text>
+    classDef data fill:#4299e1,stroke:#2b6cb0,color:#ffffff;
+    classDef process fill:#ed8936,stroke:#c05621,color:#ffffff;
+    classDef service fill:#9f7aea,stroke:#6b46c1,color:#ffffff;
+    classDef durable fill:#48bb78,stroke:#2f855a,color:#ffffff;
 
-  <rect x="70" y="256" width="980" height="122" rx="22" fill="#9f7aea"/>
-  <text x="560" y="292" text-anchor="middle" fill="white" font-size="22" font-weight="700">Application Service Layer</text>
-  <text x="560" y="318" text-anchor="middle" fill="white" font-size="14">DocumentService, DocumentOperationService, CollaborationSessionService, PresenceService, AuthorizationService</text>
-  <text x="560" y="343" text-anchor="middle" fill="white" font-size="14">OperationTransformer, CurrentUserProvider, SimpMessagingTemplate fanout</text>
-
-  <rect x="70" y="410" width="450" height="122" rx="22" fill="#48bb78"/>
-  <text x="295" y="446" text-anchor="middle" fill="white" font-size="22" font-weight="700">Data Layer</text>
-  <text x="295" y="472" text-anchor="middle" fill="white" font-size="14">PostgreSQL + Flyway + JPA</text>
-  <text x="295" y="497" text-anchor="middle" fill="white" font-size="14">Document aggregate, collaborators,</text>
-  <text x="295" y="518" text-anchor="middle" fill="white" font-size="14">immutable operation history</text>
-
-  <rect x="600" y="410" width="450" height="138" rx="22" fill="#48bb78"/>
-  <text x="825" y="444" text-anchor="middle" fill="white" font-size="20" font-weight="700">Platform and Coordination Layer</text>
-  <text x="825" y="470" text-anchor="middle" fill="white" font-size="13">Redis Pub/Sub for low-latency fanout</text>
-  <text x="825" y="491" text-anchor="middle" fill="white" font-size="13">Kafka for durable stream and replay</text>
-  <text x="825" y="512" text-anchor="middle" fill="white" font-size="13">Docker Compose local runtime</text>
-  <text x="825" y="533" text-anchor="middle" fill="white" font-size="13">Actuator health and Prometheus exposure</text>
-
-  <path d="M560,118 L560,142" stroke="#666666" stroke-width="4"/>
-  <path d="M560,232 L560,256" stroke="#666666" stroke-width="4"/>
-  <path d="M560,378 L560,410" stroke="#666666" stroke-width="4"/>
-</svg>
+    class Client data;
+    class API process;
+    class App service;
+    class Data,Platform durable;
+```
 
 ### Layer Responsibilities
 
