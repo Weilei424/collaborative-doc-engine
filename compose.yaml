@@ -53,7 +53,8 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      JWT_SECRET: ${JWT_SECRET:-PZQhbm2pxG2uTlbcHMxwTB4amG59/+uK+nYbCV/4u4o=}
+      SPRING_PROFILES_ACTIVE: dev
     depends_on:
       - postgres
       - redis
