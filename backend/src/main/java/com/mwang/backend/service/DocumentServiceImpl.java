@@ -37,9 +37,12 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional
     public DocumentResponse create(CreateDocumentRequest request, HttpServletRequest httpRequest) {
         User actor = currentUserProvider.requireCurrentUser(httpRequest);
+        String content = (request.content() == null || request.content().isBlank())
+                ? "{\"children\":[]}"
+                : request.content();
         Document saved = documentRepository.save(Document.builder()
                 .title(request.title())
-                .content(request.content())
+                .content(content)
                 .owner(actor)
                 .visibility(defaultVisibility(request.visibility()))
                 .build());
