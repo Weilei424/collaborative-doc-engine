@@ -183,6 +183,34 @@ flowchart TB
 7. The accepted operation is published to Redis and fanned out to clients connected to other backend instances.
 8. The accepted operation is published to Kafka for replay, audit, analytics, and async consumers.
 
+## Performance & Scalability
+
+This system was benchmarked using :contentReference[oaicite:0]{index=0} to evaluate both baseline workloads and high-contention real-time collaboration scenarios.
+
+### Key Results
+
+| Metric            | Baseline (Independent Docs) | Contention (Same Doc) |
+|------------------|----------------------------|------------------------|
+| p95 Latency      | 11 ms                      | 3.05 s                 |
+| Median Latency   | ~6 ms                      | 484 ms                 |
+| Throughput       | 261 ops/sec                | 44 ops/sec             |
+| Error Rate       | 0%                         | 0%                     |
+
+| Aspect                                  | Observed Limit                     |
+|-----------------------------------------|------------------------------------|
+| Max throughput (independent docs)       | ~44 ops/sec                        |
+| Comfortable concurrency (p50 < 500ms)   | ~30–40 users                       |
+| Latency > 1s (p50)                      | ~50–60 users                       |
+| Hard failure point                      | Not reached (0% errors at 100 VUs) |
+
+### Summary
+
+- The system achieves **high throughput and low latency** under non-contended workloads.
+- Under heavy collaboration (100 users editing the same document), performance degrades due to **intentional serialization for consistency**.
+- The system demonstrates **graceful degradation** — no errors, only increased latency.
+
+👉 See full benchmark analysis: **[Performance & Scalability Report](./PERFORMANCE.md)**
+
 ## API Surface
 
 ### REST Endpoints
