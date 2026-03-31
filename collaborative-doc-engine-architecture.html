@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collaborative Document Engine Architecture</title>
+    <style>
+        :root {
+            --bg: #f3efe7;
+            --surface: #fffdf8;
+            --surface-alt: #f8f4ec;
+            --ink: #1f2933;
+            --muted: #5b6875;
+            --border: #d7d0c2;
+            --data: #4299e1;
+            --processing: #ed8936;
+            --ai: #9f7aea;
+            --success: #48bb78;
+            --shadow: 0 18px 40px rgba(31, 41, 51, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Georgia, "Times New Roman", serif;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at top left, rgba(66, 153, 225, 0.14), transparent 32%),
+                radial-gradient(circle at top right, rgba(159, 122, 234, 0.12), transparent 26%),
+                linear-gradient(180deg, #f7f1e5 0%, var(--bg) 100%);
+            line-height: 1.6;
+        }
+
+        .page {
+            max-width: 1240px;
+            margin: 0 auto;
+            padding: 32px 20px 64px;
+        }
+
+        .hero {
+            padding: 36px;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 28px;
+            color: #f8fafc;
+            background:
+                linear-gradient(135deg, rgba(22, 56, 91, 0.94), rgba(126, 87, 194, 0.9)),
+                linear-gradient(45deg, rgba(237, 137, 54, 0.25), rgba(72, 187, 120, 0.18));
+            box-shadow: var(--shadow);
+        }
+
+        .eyebrow {
+            margin: 0 0 10px;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            opacity: 0.8;
+        }
+
+        h1, h2, h3 {
+            line-height: 1.15;
+            margin-top: 0;
+        }
+
+        h1 {
+            margin-bottom: 16px;
+            font-size: clamp(2.2rem, 4vw, 4.4rem);
+        }
+
+        .hero p {
+            max-width: 850px;
+            margin: 0;
+            font-size: 1.05rem;
+        }
+
+        .summary-grid,
+        .card-grid,
+        .deployment-grid {
+            display: grid;
+            gap: 18px;
+            margin-top: 22px;
+        }
+
+        .summary-grid {
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        }
+
+        .card-grid,
+        .deployment-grid {
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        }
+
+        .section {
+            margin-top: 28px;
+            padding: 26px;
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            background: rgba(255, 253, 248, 0.94);
+            box-shadow: var(--shadow);
+        }
+
+        .section-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+
+        .section-header p {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        .metric,
+        .card,
+        .stage {
+            border-radius: 18px;
+            border: 1px solid var(--border);
+            background: var(--surface-alt);
+            padding: 16px;
+        }
+
+        .metric strong,
+        .card strong,
+        .stage strong {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 1rem;
+        }
+
+        .hero .metric {
+            background: rgba(255, 250, 242, 0.96);
+            border-color: rgba(255, 255, 255, 0.22);
+            color: var(--ink);
+            box-shadow: 0 8px 18px rgba(16, 24, 40, 0.14);
+        }
+
+        .hero .metric strong {
+            color: #15324d;
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .tag-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .data { background: rgba(66, 153, 225, 0.18); color: #1e4f7a; }
+        .processing { background: rgba(237, 137, 54, 0.2); color: #7a4310; }
+        .ai { background: rgba(159, 122, 234, 0.2); color: #5f3cb1; }
+        .success { background: rgba(72, 187, 120, 0.18); color: #21543d; }
+
+        svg {
+            width: 100%;
+            height: auto;
+            display: block;
+            margin-top: 18px;
+            border-radius: 18px;
+            background: #fcfaf5;
+            border: 1px solid var(--border);
+        }
+
+        .pipeline {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 16px;
+            margin-top: 18px;
+        }
+
+        .stage {
+            position: relative;
+            background: linear-gradient(180deg, #fffdf8 0%, #f6f1e7 100%);
+        }
+
+        .stage::after {
+            content: "";
+            position: absolute;
+            inset: auto 12px 10px 12px;
+            height: 5px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, var(--data), var(--processing), var(--success));
+            opacity: 0.8;
+        }
+
+        ul {
+            margin: 10px 0 0;
+            padding-left: 18px;
+        }
+
+        li + li {
+            margin-top: 6px;
+        }
+
+        .footer-note {
+            margin-top: 18px;
+            font-size: 0.92rem;
+            color: var(--muted);
+        }
+
+        code {
+            padding: 2px 6px;
+            border-radius: 8px;
+            background: rgba(31, 41, 51, 0.08);
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 0.92em;
+        }
+
+        @media (max-width: 720px) {
+            .page {
+                padding: 18px 14px 40px;
+            }
+
+            .hero,
+            .section {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <section class="hero">
+        <p class="eyebrow">System Architecture</p>
+        <h1>Collaborative Document Engine</h1>
+        <p>
+            A Spring Boot based collaborative editing platform that combines durable document persistence in PostgreSQL
+            with low-latency multi-instance collaboration over STOMP/WebSocket, Redis Pub/Sub fanout, and Kafka-backed
+            accepted-operation streaming for replay and downstream processing.
+        </p>
+        <div class="summary-grid">
+            <div class="metric">
+                <strong>Primary users</strong>
+                Product teams, interviewers, and engineers evaluating real-time collaborative editing design.
+            </div>
+            <div class="metric">
+                <strong>Business value</strong>
+                Demonstrates a defensible split between hot-path collaboration, durable storage, and async event flows.
+            </div>
+            <div class="metric">
+                <strong>Design target</strong>
+                Horizontally scalable backend with ordered operations, ACL enforcement, and recoverable edit history.
+            </div>
+            <div class="metric">
+                <strong>Current stack</strong>
+                React/Vite frontend, Spring Boot backend, PostgreSQL, Redis, Kafka, Flyway, Docker Compose.
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-header">
+            <div>
+                <h2>1. Business Context</h2>
+                <p>What the system exists to do and how success is measured.</p>
+            </div>
+        </div>
+        <div class="card-grid">
+            <div class="card">
+                <strong>Purpose</strong>
+                Enable multiple users to read, edit, and share structured documents in real time while the server remains
+                the ordering authority for accepted changes.
+            </div>
+            <div class="card">
+                <strong>Target users</strong>
+                Owners creating documents, collaborators with role-based access, and teams needing a fast but auditable
+                collaboration backbone.
+            </div>
+            <div class="card">
+                <strong>Main objectives</strong>
+                Preserve document integrity, keep collaboration responsive across instances, and provide a system that is
+                simple to explain in interviews and practical to evolve.
+            </div>
+            <div class="card">
+                <strong>Expected outcomes</strong>
+                Low-latency accepted-operation delivery, durable edit history, ACL enforcement across REST and messaging,
+                and clear infrastructure responsibility boundaries.
+            </div>
+        </div>
+        <div class="tag-row">
+            <span class="tag data">Data ownership in PostgreSQL</span>
+            <span class="tag processing">Server-authoritative OT / rebase</span>
+            <span class="tag success">Low-latency collaboration</span>
+            <span class="tag ai">Durable event stream for replay</span>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-header">
+            <div>
+                <h2>2. Data Flow Diagram</h2>
+                <p>Hot path for create, join, edit, fanout, and durable event publishing.</p>
+            </div>
+        </div>
+        <svg viewBox="0 0 1240 620" xmlns="http://www.w3.org/2000/svg" aria-labelledby="data-flow-title">
+            <title id="data-flow-title">Collaborative document engine data flow</title>
+            <defs>
+                <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+                    <path d="M0,0 L10,5 L0,10 z" fill="#666666"/>
+                </marker>
+            </defs>
+            <rect x="60" y="240" width="180" height="104" rx="16" fill="#4299e1"/>
+            <text x="150" y="280" text-anchor="middle" fill="white" font-size="20" font-weight="700">Clients</text>
+            <text x="150" y="306" text-anchor="middle" fill="white" font-size="13">React UI + SockJS/STOMP</text>
+            <text x="150" y="325" text-anchor="middle" fill="white" font-size="13">REST + WebSocket</text>
+
+            <rect x="320" y="90" width="220" height="106" rx="16" fill="#ed8936"/>
+            <text x="430" y="132" text-anchor="middle" fill="white" font-size="19" font-weight="700">REST Layer</text>
+            <text x="430" y="158" text-anchor="middle" fill="white" font-size="13">Auth, CRUD, sharing, search</text>
+            <text x="430" y="177" text-anchor="middle" fill="white" font-size="13">Document controllers</text>
+
+            <rect x="320" y="260" width="220" height="120" rx="16" fill="#ed8936"/>
+            <text x="430" y="303" text-anchor="middle" fill="white" font-size="19" font-weight="700">Collaboration Layer</text>
+            <text x="430" y="329" text-anchor="middle" fill="white" font-size="13">Join, presence, submit op</text>
+            <text x="430" y="348" text-anchor="middle" fill="white" font-size="13">ACL + session checks</text>
+
+            <rect x="640" y="90" width="280" height="290" rx="18" fill="#9f7aea"/>
+            <text x="780" y="132" text-anchor="middle" fill="white" font-size="19" font-weight="700">Spring Services</text>
+            <text x="780" y="160" text-anchor="middle" fill="white" font-size="13">DocumentService</text>
+            <text x="780" y="184" text-anchor="middle" fill="white" font-size="13">CollaborationSessionService</text>
+            <text x="780" y="208" text-anchor="middle" fill="white" font-size="13">CollaborationPresenceService</text>
+            <text x="780" y="232" text-anchor="middle" fill="white" font-size="13">DocumentOperationService</text>
+            <text x="780" y="268" text-anchor="middle" fill="white" font-size="13">Authorization, idempotency,</text>
+            <text x="780" y="287" text-anchor="middle" fill="white" font-size="13">transform and fanout</text>
+            <text x="780" y="317" text-anchor="middle" fill="white" font-size="13">Locks document and assigns</text>
+            <text x="780" y="336" text-anchor="middle" fill="white" font-size="13">next server version</text>
+            <text x="780" y="365" text-anchor="middle" fill="white" font-size="13">Persists projection + op log</text>
+
+            <rect x="1000" y="70" width="170" height="118" rx="16" fill="#48bb78"/>
+            <text x="1085" y="112" text-anchor="middle" fill="white" font-size="19" font-weight="700">PostgreSQL</text>
+            <text x="1085" y="138" text-anchor="middle" fill="white" font-size="13">Documents</text>
+            <text x="1085" y="157" text-anchor="middle" fill="white" font-size="13">Collaborators + ops</text>
+
+            <rect x="1000" y="232" width="170" height="118" rx="16" fill="#4299e1"/>
+            <text x="1085" y="274" text-anchor="middle" fill="white" font-size="19" font-weight="700">Redis</text>
+            <text x="1085" y="300" text-anchor="middle" fill="white" font-size="13">Low-latency fanout</text>
+            <text x="1085" y="319" text-anchor="middle" fill="white" font-size="13">Sessions + presence</text>
+
+            <rect x="1000" y="394" width="170" height="118" rx="16" fill="#48bb78"/>
+            <text x="1085" y="436" text-anchor="middle" fill="white" font-size="19" font-weight="700">Kafka</text>
+            <text x="1085" y="462" text-anchor="middle" fill="white" font-size="13">Accepted ops stream</text>
+            <text x="1085" y="481" text-anchor="middle" fill="white" font-size="13">Replay + audit</text>
+
+            <rect x="640" y="450" width="280" height="108" rx="16" fill="#48bb78"/>
+            <text x="780" y="490" text-anchor="middle" fill="white" font-size="19" font-weight="700">Outputs</text>
+            <text x="780" y="516" text-anchor="middle" fill="white" font-size="13">Topic broadcasts to connected</text>
+            <text x="780" y="535" text-anchor="middle" fill="white" font-size="13">collaborators and async consumers</text>
+
+            <path d="M240,265 L320,160" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+            <path d="M240,318 L320,320" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+            <path d="M540,145 L640,145" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+            <path d="M540,320 L640,320" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+            <path d="M920,130 L1000,130" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+            <path d="M920,285 L1000,285" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+            <path d="M920,350 C960,385 972,415 1000,450" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+            <path d="M780,380 L780,450" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+            <path d="M1000,285 C930,285 920,475 920,504" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+            <path d="M1000,453 L920,504" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+            <path d="M1000,285 C880,230 560,500 240,344" stroke="#666666" stroke-width="3" fill="none" marker-end="url(#arrow)" stroke-dasharray="10 7"/>
+
+            <text x="688" y="62" fill="#666666" font-size="13">Server-authoritative ordering and persistence</text>
+            <text x="915" y="220" fill="#666666" font-size="13">Hot-path fanout</text>
+            <text x="912" y="386" fill="#666666" font-size="13">After-commit durable stream</text>
+            <text x="165" y="374" fill="#666666" font-size="13">Subscribers receive sessions, presence, accepted ops</text>
+        </svg>
+        <p class="footer-note">
+            The edit hot path stays server-controlled: a client submits an operation with <code>operationId</code> and
+            <code>baseVersion</code>, the backend validates access, transforms as needed, persists the accepted result,
+            then publishes to Redis for low-latency fanout and Kafka for durability.
+        </p>
+    </section>
+
+    <section class="section">
+        <div class="section-header">
+            <div>
+                <h2>3. Processing Pipeline</h2>
+                <p>The ordered stages of a collaboration request.</p>
+            </div>
+        </div>
+        <div class="pipeline">
+            <div class="stage">
+                <strong>1. Ingress</strong>
+                REST calls handle document CRUD and sharing. STOMP endpoints handle join, leave, presence, and edit submission.
+            </div>
+            <div class="stage">
+                <strong>2. Identity & ACL</strong>
+                Spring Security authenticates HTTP and WebSocket traffic, then document-specific authorization checks gate read or write access.
+            </div>
+            <div class="stage">
+                <strong>3. Validation</strong>
+                Operation shape, session state, and collaborator semantics are validated before the write path proceeds.
+            </div>
+            <div class="stage">
+                <strong>4. Ordering & Rebase</strong>
+                The backend locks the document row, checks idempotency, loads intervening operations, and rebases or converts to <code>NO_OP</code> when needed.
+            </div>
+            <div class="stage">
+                <strong>5. Persistence</strong>
+                The materialized document snapshot and immutable operation record are saved in PostgreSQL under one transactional flow.
+            </div>
+            <div class="stage">
+                <strong>6. Distribution</strong>
+                Local subscribers receive immediate topic broadcasts, Redis propagates to other instances, and Kafka receives an after-commit accepted-operation event.
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-header">
+            <div>
+                <h2>4. System Architecture</h2>
+                <p>Layered view from browser to infrastructure.</p>
+            </div>
+        </div>
+        <svg viewBox="0 0 1120 580" xmlns="http://www.w3.org/2000/svg" aria-labelledby="layered-title">
+            <title id="layered-title">Layered architecture diagram</title>
+            <rect x="70" y="40" width="980" height="78" rx="22" fill="#4299e1"/>
+            <text x="550" y="73" text-anchor="middle" fill="white" font-size="22" font-weight="700">Client Layer</text>
+            <text x="550" y="96" text-anchor="middle" fill="white" font-size="14">React + Vite frontend, REST API calls, SockJS/STOMP collaboration transport</text>
+
+            <rect x="70" y="142" width="980" height="90" rx="22" fill="#ed8936"/>
+            <text x="550" y="168" text-anchor="middle" fill="white" font-size="22" font-weight="700">API and Messaging Layer</text>
+            <text x="550" y="192" text-anchor="middle" fill="white" font-size="14">DocumentController, CollaboratorController, AuthController, CollaborationController, WebSocketConfig</text>
+
+            <rect x="70" y="256" width="980" height="122" rx="22" fill="#9f7aea"/>
+            <text x="560" y="292" text-anchor="middle" fill="white" font-size="22" font-weight="700">Application Service Layer</text>
+            <text x="560" y="318" text-anchor="middle" fill="white" font-size="14">DocumentService, DocumentOperationService, CollaborationSessionService, PresenceService, AuthorizationService</text>
+            <text x="560" y="343" text-anchor="middle" fill="white" font-size="14">OperationTransformer, CurrentUserProvider, SimpMessagingTemplate fanout</text>
+
+            <rect x="70" y="410" width="450" height="122" rx="22" fill="#48bb78"/>
+            <text x="295" y="446" text-anchor="middle" fill="white" font-size="22" font-weight="700">Data Layer</text>
+            <text x="295" y="472" text-anchor="middle" fill="white" font-size="14">PostgreSQL + Flyway + JPA</text>
+            <text x="295" y="497" text-anchor="middle" fill="white" font-size="14">Document aggregate, collaborators,</text>
+            <text x="295" y="518" text-anchor="middle" fill="white" font-size="14">immutable operation history</text>
+
+            <rect x="600" y="410" width="450" height="138" rx="22" fill="#48bb78"/>
+            <text x="825" y="444" text-anchor="middle" fill="white" font-size="20" font-weight="700">Platform and Coordination Layer</text>
+            <text x="825" y="470" text-anchor="middle" fill="white" font-size="13">Redis Pub/Sub for low-latency fanout</text>
+            <text x="825" y="491" text-anchor="middle" fill="white" font-size="13">Kafka for durable stream and replay</text>
+            <text x="825" y="512" text-anchor="middle" fill="white" font-size="13">Docker Compose local runtime</text>
+            <text x="825" y="533" text-anchor="middle" fill="white" font-size="13">Actuator health and Prometheus exposure</text>
+
+            <path d="M560,118 L560,142" stroke="#666666" stroke-width="4"/>
+            <path d="M560,232 L560,256" stroke="#666666" stroke-width="4"/>
+            <path d="M560,378 L560,410" stroke="#666666" stroke-width="4"/>
+        </svg>
+        <div class="card-grid">
+            <div class="card">
+                <strong>Client and editor</strong>
+                The frontend uses React, Vite, Tiptap, SockJS, and STOMP to combine metadata management with live editing.
+            </div>
+            <div class="card">
+                <strong>Backend responsibility</strong>
+                Spring Boot owns request handling, authorization, operation ordering, document projection updates, and downstream publication.
+            </div>
+            <div class="card">
+                <strong>State boundaries</strong>
+                PostgreSQL is the source of truth, Redis carries transient coordination and fanout, and Kafka holds durable accepted-operation events.
+            </div>
+            <div class="card">
+                <strong>Scalability posture</strong>
+                Any backend instance can accept a client connection, while Redis and Kafka let collaboration and event processing extend beyond one node.
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-header">
+            <div>
+                <h2>5. Features</h2>
+                <p>Functional and non-functional requirements represented by the current codebase.</p>
+            </div>
+        </div>
+        <div class="card-grid">
+            <div class="card">
+                <strong>Functional features</strong>
+                <ul>
+                    <li>Document CRUD and paginated listing for accessible resources.</li>
+                    <li>Ownership transfer and collaborator permission management.</li>
+                    <li>Real-time join, leave, presence, and accepted-operation messaging.</li>
+                    <li>Operation log plus materialized current document state.</li>
+                    <li>Search and filtering support for document discovery.</li>
+                </ul>
+            </div>
+            <div class="card">
+                <strong>Authorization model</strong>
+                <ul>
+                    <li>Owner, collaborator, and visibility-based access semantics.</li>
+                    <li>Read authorization enforced for subscriptions and session joins.</li>
+                    <li>Write authorization enforced before document mutations and operation submission.</li>
+                    <li>Per-user access-revocation topics for real-time removal flows.</li>
+                </ul>
+            </div>
+            <div class="card">
+                <strong>Reliability characteristics</strong>
+                <ul>
+                    <li>Idempotency checks on <code>operationId</code> avoid duplicate accepted operations.</li>
+                    <li>Pessimistic locking serializes version assignment on the document aggregate.</li>
+                    <li>Kafka publication occurs after commit to avoid durable events for rolled-back writes.</li>
+                    <li>Redis propagation filters same-instance echoes to prevent duplicate broadcasts.</li>
+                </ul>
+            </div>
+            <div class="card">
+                <strong>Operational qualities</strong>
+                <ul>
+                    <li>Flyway-controlled schema evolution with <code>ddl-auto=validate</code>.</li>
+                    <li>Actuator health and Prometheus endpoints for runtime visibility.</li>
+                    <li>Automated test coverage across controllers, services, Redis, Kafka, and end-to-end collaboration paths.</li>
+                    <li>Docker Compose local environment spanning backend, frontend, PostgreSQL, Redis, and Kafka.</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-header">
+            <div>
+                <h2>6. Deployment</h2>
+                <p>How the system is run locally today and how it is intended to scale.</p>
+            </div>
+        </div>
+        <div class="deployment-grid">
+            <div class="card">
+                <strong>Local development</strong>
+                <ul>
+                    <li><code>docker compose up -d</code> starts PostgreSQL, Redis, Kafka, backend, and frontend.</li>
+                    <li>The backend container exposes port <code>8080</code>; the frontend serves on <code>3000</code>.</li>
+                    <li>Java 17 and Maven wrapper support local backend execution outside containers as well.</li>
+                </ul>
+            </div>
+            <div class="card">
+                <strong>Backend packaging</strong>
+                <ul>
+                    <li>A two-stage Dockerfile builds the Spring Boot jar with Maven, then runs it on Eclipse Temurin JRE 17.</li>
+                    <li>Environment variables inject database, Redis, Kafka, and JWT settings.</li>
+                    <li>Flyway migrations run at startup and validate the schema shape.</li>
+                </ul>
+            </div>
+            <div class="card">
+                <strong>Runtime dependencies</strong>
+                <ul>
+                    <li>PostgreSQL stores durable document and operation state.</li>
+                    <li>Redis supports cross-instance fanout, presence, and session propagation.</li>
+                    <li>Kafka provides a durable document-operations stream for notifications, replay, and analytics consumers.</li>
+                </ul>
+            </div>
+            <div class="card">
+                <strong>Scale-out direction</strong>
+                <ul>
+                    <li>Multiple backend instances can serve clients because fanout is not tied to one node.</li>
+                    <li>Redis keeps collaboration fast; Kafka keeps downstream processing durable.</li>
+                    <li>The architecture is ready for future production concerns such as stricter JWT enforcement and more advanced async consumers.</li>
+                </ul>
+            </div>
+        </div>
+        <p class="footer-note">
+            Current identity handling mixes an <code>X-User-Id</code> oriented development flow with JWT-capable security
+            components. In the architecture story, this is best described as a pragmatic MVP authentication layer with a clearer JWT-first production path.
+        </p>
+    </section>
+</div>
+</body>
+</html>
