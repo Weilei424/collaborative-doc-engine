@@ -32,19 +32,24 @@ class MetricsConfigTest {
     }
 
     @Test
-    void histogramCustomizer_enablesBucketsForKnownTimerNames() {
+    void histogramCustomizer_enablesPercentilesForKnownTimerNames() {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         new MetricsConfig().histogramCustomizer().customize(registry);
 
-        // Known timer — should produce _bucket lines in the scrape output
         Timer.builder("lockAcquisition")
                 .register(registry)
                 .record(Duration.ofMillis(10));
 
         String scrape = registry.scrape();
         assertThat(scrape)
-                .as("lockAcquisition (a known TIMED_OPERATIONS entry) must produce histogram buckets")
-                .contains("lockAcquisition_seconds_bucket");
+                .as("lockAcquisition must expose p50 quantile gauge in text format")
+                .contains("lock_acquisition_seconds{quantile=\"0.5\"");
+        assertThat(scrape)
+                .as("lockAcquisition must expose p95 quantile gauge in text format")
+                .contains("lock_acquisition_seconds{quantile=\"0.95\"");
+        assertThat(scrape)
+                .as("lockAcquisition must expose p99 quantile gauge in text format")
+                .contains("lock_acquisition_seconds{quantile=\"0.99\"");
     }
 
     @Test
@@ -64,12 +69,12 @@ class MetricsConfigTest {
         String scrape = registry.scrape();
 
         for (String name : new String[]{
-                "lockAcquisition", "loadDocument", "loadInterveningOps",
-                "otTransformLoop", "perOpJsonParse", "treeApply",
-                "persistOperation", "publishRedis", "publishKafka"}) {
+                "lock_acquisition", "load_document", "load_intervening_ops",
+                "ot_transform_loop", "per_op_json_parse", "tree_apply",
+                "persist_operation", "publish_redis", "publish_kafka"}) {
             assertThat(scrape)
-                    .as(name + " must appear as a histogram in the Prometheus scrape")
-                    .contains(name + "_seconds_bucket");
+                    .as(name + " must expose p95 quantile gauge in the Prometheus scrape")
+                    .contains(name + "_seconds{quantile=\"0.95\"");
         }
 
         for (String name : new String[]{"outbox_pending_total", "outbox_poison_total", "redis_circuit_open_total"}) {
@@ -80,18 +85,17 @@ class MetricsConfigTest {
     }
 
     @Test
-    void histogramCustomizer_doesNotEnableBucketsForUnknownTimerNames() {
+    void histogramCustomizer_doesNotEnablePercentilesForUnknownTimerNames() {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         new MetricsConfig().histogramCustomizer().customize(registry);
 
-        // Unknown timer — should NOT produce _bucket lines
         Timer.builder("someUnknownTimer")
                 .register(registry)
                 .record(Duration.ofMillis(5));
 
         String scrape = registry.scrape();
         assertThat(scrape)
-                .as("someUnknownTimer (not in TIMED_OPERATIONS) must NOT produce histogram buckets")
-                .doesNotContain("someUnknownTimer_seconds_bucket");
+                .as("someUnknownTimer (not in TIMED_OPERATIONS) must NOT produce quantile gauges")
+                .doesNotContain("some_unknown_timer_seconds{quantile=");
     }
 }
