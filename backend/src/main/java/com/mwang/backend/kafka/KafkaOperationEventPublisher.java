@@ -3,6 +3,7 @@ package com.mwang.backend.kafka;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,7 @@ public class KafkaOperationEventPublisher {
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
     private final RetryTemplate retryTemplate;
+    private final Timer publishKafkaTimer;
 
     @Value("${kafka.topics.document-operations}")
     private String operationsTopic;
@@ -30,10 +32,12 @@ public class KafkaOperationEventPublisher {
     public KafkaOperationEventPublisher(
             KafkaTemplate<String, String> kafkaTemplate,
             ObjectMapper objectMapper,
-            RetryTemplate retryTemplate) {
+            RetryTemplate retryTemplate,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
         this.retryTemplate = retryTemplate;
+        this.publishKafkaTimer = Timer.builder("publishKafka").register(meterRegistry);
     }
 
     @Async
@@ -64,6 +68,7 @@ public class KafkaOperationEventPublisher {
         String key = response.documentId().toString();
         retryTemplate.execute(
                 ctx -> {
+                    long kafkaStart = System.nanoTime();
                     try {
                         kafkaTemplate.send(operationsTopic, key, payload).get();
                     } catch (ExecutionException e) {
@@ -71,6 +76,10 @@ public class KafkaOperationEventPublisher {
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         throw new RuntimeException(e);
+                    } finally {
+                        publishKafkaTimer.record(
+                                System.nanoTime() - kafkaStart,
+                                java.util.concurrent.TimeUnit.NANOSECONDS);
                     }
                     return null;
                 },
