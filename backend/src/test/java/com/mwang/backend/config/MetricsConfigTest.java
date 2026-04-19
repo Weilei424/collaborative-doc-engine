@@ -32,7 +32,7 @@ class MetricsConfigTest {
     }
 
     @Test
-    void histogramCustomizer_enablesBucketsForKnownTimerNames() {
+    void histogramCustomizer_enablesPercentilesForKnownTimerNames() {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         new MetricsConfig().histogramCustomizer().customize(registry);
 
@@ -42,8 +42,10 @@ class MetricsConfigTest {
 
         String scrape = registry.scrape();
         assertThat(scrape)
-                .as("lockAcquisition must expose histogram buckets in the Prometheus scrape")
-                .contains("lockAcquisition_seconds_bucket");
+                .as("lockAcquisition must expose p50/p95/p99 quantile gauges in the Prometheus scrape")
+                .contains("lockAcquisition_seconds{quantile=\"0.5\"");
+        assertThat(scrape).contains("lockAcquisition_seconds{quantile=\"0.95\"");
+        assertThat(scrape).contains("lockAcquisition_seconds{quantile=\"0.99\"");
     }
 
     @Test
@@ -67,8 +69,8 @@ class MetricsConfigTest {
                 "otTransformLoop", "perOpJsonParse", "treeApply",
                 "persistOperation", "publishRedis", "publishKafka"}) {
             assertThat(scrape)
-                    .as(name + " must expose histogram buckets in the Prometheus scrape")
-                    .contains(name + "_seconds_bucket");
+                    .as(name + " must expose p95 quantile gauge in the Prometheus scrape")
+                    .contains(name + "_seconds{quantile=\"0.95\"");
         }
 
         for (String name : new String[]{"outbox_pending_total", "outbox_poison_total", "redis_circuit_open_total"}) {
@@ -89,7 +91,7 @@ class MetricsConfigTest {
 
         String scrape = registry.scrape();
         assertThat(scrape)
-                .as("someUnknownTimer (not in TIMED_OPERATIONS) must NOT produce histogram buckets")
-                .doesNotContain("someUnknownTimer_seconds_bucket");
+                .as("someUnknownTimer (not in TIMED_OPERATIONS) must NOT produce quantile gauges")
+                .doesNotContain("someUnknownTimer_seconds{quantile=");
     }
 }
