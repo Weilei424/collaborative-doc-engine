@@ -18,6 +18,7 @@ import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.SubmitOperationRequest;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.persistence.EntityManager;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
@@ -43,7 +44,16 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     private final Counter conflictedCounter;
     private final Counter noopCounter;
     private final Counter idempotentCounter;
+    private final Counter operationsRetriesCounter;    // placeholder — incremented in P19
+    private final Counter operationsResyncRequiredCounter; // placeholder — incremented in P20
     private final MeterRegistry meterRegistry;
+    private final Timer loadDocumentTimer;
+    private final Timer lockAcquisitionTimer;
+    private final Timer loadInterveningOpsTimer;
+    private final Timer otTransformLoopTimer;
+    private final Timer perOpJsonParseTimer;
+    private final Timer treeApplyTimer;
+    private final Timer persistOperationTimer;
 
     public DocumentOperationServiceImpl(
             DocumentRepository documentRepository,
@@ -67,6 +77,15 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         this.conflictedCounter = meterRegistry.counter("operations.conflicted");
         this.noopCounter = meterRegistry.counter("operations.noop");
         this.idempotentCounter = meterRegistry.counter("operations.idempotent");
+        this.operationsRetriesCounter = meterRegistry.counter("operations.retries");
+        this.operationsResyncRequiredCounter = meterRegistry.counter("operations.resync_required");
+        this.loadDocumentTimer = Timer.builder("loadDocument").register(meterRegistry);
+        this.lockAcquisitionTimer = Timer.builder("lockAcquisition").register(meterRegistry);
+        this.loadInterveningOpsTimer = Timer.builder("loadInterveningOps").register(meterRegistry);
+        this.otTransformLoopTimer = Timer.builder("otTransformLoop").register(meterRegistry);
+        this.perOpJsonParseTimer = Timer.builder("perOpJsonParse").register(meterRegistry);
+        this.treeApplyTimer = Timer.builder("treeApply").register(meterRegistry);
+        this.persistOperationTimer = Timer.builder("persistOperation").register(meterRegistry);
     }
 
     @Override
@@ -80,9 +99,10 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         // 2. Payload validation (fail fast before touching the DB)
         validatePayload(request.operationType(), request.payload());
 
-        // 3. Load document for auth (non-locking read — idempotency fast-path must still be authorized)
-        Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        // 3. Load document for auth (non-locking read)
+        Document document = loadDocumentTimer.record(() ->
+                documentRepository.findById(documentId)
+                        .orElseThrow(() -> new DocumentNotFoundException(documentId)));
         authorizationService.assertCanWrite(document, actor);
 
         // 4. Idempotency check (post-auth, pre-lock — avoids acquiring write lock on duplicate submissions)
@@ -100,8 +120,9 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         // this lock acquisition will cause Hibernate to detect a stale @Version on the
         // cached entity and throw ObjectOptimisticLockingFailureException.
         entityManager.detach(document);
-        document = documentRepository.findByIdWithPessimisticLock(documentId)
-                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        document = lockAcquisitionTimer.record(() ->
+                documentRepository.findByIdWithPessimisticLock(documentId)
+                        .orElseThrow(() -> new DocumentNotFoundException(documentId)));
 
         // 5a. Re-check authorization against the locked document (closes TOCTOU gap between the
         //     non-locking read above and the now-acquired pessimistic write lock)
@@ -117,23 +138,28 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             return toResponse(existingOpt.get(), documentId);
         }
 
-        // 6. Load intervening operations (document is already locked by pessimistic write)
-        List<DocumentOperation> intervening = operationRepository
-                .findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(documentId, request.baseVersion());
+        // 6. Load intervening operations
+        List<DocumentOperation> intervening = loadInterveningOpsTimer.record(() ->
+                operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
+                        documentId, request.baseVersion()));
         if (!intervening.isEmpty()) {
             conflictedCounter.increment();
         }
 
-        // 7. Transform incoming op against each intervening op in order (short-circuit on no-op)
+        // 7. Transform incoming op against each intervening op in order
         DocumentOperationType currentType = request.operationType();
         JsonNode currentPayload = request.payload();
+        long loopStart = System.nanoTime();
         for (DocumentOperation accepted : intervening) {
+            long parseStart = System.nanoTime();
             JsonNode acceptedPayload;
             try {
                 acceptedPayload = objectMapper.readTree(accepted.getPayload());
             } catch (Exception e) {
                 throw new IllegalStateException("Failed to deserialize accepted operation payload", e);
             }
+            perOpJsonParseTimer.record(System.nanoTime() - parseStart, java.util.concurrent.TimeUnit.NANOSECONDS);
+
             Optional<JsonNode> transformed = transformer.transform(
                     currentType, currentPayload, accepted.getOperationType(), acceptedPayload);
             if (transformed.isEmpty()) {
@@ -144,10 +170,12 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             }
             currentPayload = transformed.get();
         }
+        otTransformLoopTimer.record(System.nanoTime() - loopStart, java.util.concurrent.TimeUnit.NANOSECONDS);
 
         // 8. Apply to document tree (skip for NO_OP)
         long nextVersion = document.getCurrentVersion() + 1;
         if (currentType != DocumentOperationType.NO_OP) {
+            long treeStart = System.nanoTime();
             try {
                 DocumentTree tree = objectMapper.readValue(document.getContent(), DocumentTree.class);
                 JsonNode enrichedPayload = tree.applyOperation(currentType, currentPayload);
@@ -155,6 +183,8 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                 document.setContent(objectMapper.writeValueAsString(tree));
             } catch (Exception e) {
                 throw new InvalidOperationException("Failed to apply operation to document: " + e.getMessage());
+            } finally {
+                treeApplyTimer.record(System.nanoTime() - treeStart, java.util.concurrent.TimeUnit.NANOSECONDS);
             }
         }
 
@@ -173,9 +203,14 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                 .payload(payloadString(currentPayload))
                 .build();
 
-        operationRepository.save(accepted);
-        document.setCurrentVersion(nextVersion);
-        documentRepository.save(document);
+        long persistStart = System.nanoTime();
+        try {
+            operationRepository.save(accepted);
+            document.setCurrentVersion(nextVersion);
+            documentRepository.save(document);
+        } finally {
+            persistOperationTimer.record(System.nanoTime() - persistStart, java.util.concurrent.TimeUnit.NANOSECONDS);
+        }
         meterRegistry.counter("operations.accepted", "type", currentType.name()).increment();
 
         AcceptedOperationResponse acceptedResponse = new AcceptedOperationResponse(
