@@ -1,0 +1,65 @@
+package com.mwang.backend.config;
+
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
+import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class MetricsConfigTest {
+
+    @Test
+    void placeholderMetrics_registersOutboxAndCircuitBreakerCounters() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+        new MetricsConfig().placeholderMetrics().bindTo(registry);
+
+        Counter outboxPending = registry.find("outbox.pending").counter();
+        Counter outboxPoison = registry.find("outbox.poison").counter();
+        Counter redisCircuitOpen = registry.find("redis.circuit_open").counter();
+
+        assertThat(outboxPending).isNotNull();
+        assertThat(outboxPoison).isNotNull();
+        assertThat(redisCircuitOpen).isNotNull();
+        assertThat(outboxPending.count()).isEqualTo(0.0);
+        assertThat(outboxPoison.count()).isEqualTo(0.0);
+        assertThat(redisCircuitOpen.count()).isEqualTo(0.0);
+    }
+
+    @Test
+    void histogramCustomizer_enablesBucketsForKnownTimerNames() {
+        PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        new MetricsConfig().histogramCustomizer().customize(registry);
+
+        // Known timer — should produce _bucket lines in the scrape output
+        Timer.builder("lockAcquisition")
+                .register(registry)
+                .record(Duration.ofMillis(10));
+
+        String scrape = registry.scrape();
+        assertThat(scrape)
+                .as("lockAcquisition (a known TIMED_OPERATIONS entry) must produce histogram buckets")
+                .contains("lockAcquisition_seconds_bucket");
+    }
+
+    @Test
+    void histogramCustomizer_doesNotEnableBucketsForUnknownTimerNames() {
+        PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        new MetricsConfig().histogramCustomizer().customize(registry);
+
+        // Unknown timer — should NOT produce _bucket lines
+        Timer.builder("someUnknownTimer")
+                .register(registry)
+                .record(Duration.ofMillis(5));
+
+        String scrape = registry.scrape();
+        assertThat(scrape)
+                .as("someUnknownTimer (not in TIMED_OPERATIONS) must NOT produce histogram buckets")
+                .doesNotContain("someUnknownTimer_seconds_bucket");
+    }
+}
