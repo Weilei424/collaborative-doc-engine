@@ -43,13 +43,16 @@ class MetricsConfigTest {
         String scrape = registry.scrape();
         assertThat(scrape)
                 .as("lockAcquisition must expose p50 quantile gauge in text format")
-                .contains("lock_acquisition_seconds{quantile=\"0.5\"");
+                .contains("lockAcquisition_seconds{quantile=\"0.5\"");
         assertThat(scrape)
                 .as("lockAcquisition must expose p95 quantile gauge in text format")
-                .contains("lock_acquisition_seconds{quantile=\"0.95\"");
+                .contains("lockAcquisition_seconds{quantile=\"0.95\"");
         assertThat(scrape)
                 .as("lockAcquisition must expose p99 quantile gauge in text format")
-                .contains("lock_acquisition_seconds{quantile=\"0.99\"");
+                .contains("lockAcquisition_seconds{quantile=\"0.99\"");
+        assertThat(scrape)
+                .as("lockAcquisition must expose histogram buckets in text format")
+                .contains("lockAcquisition_seconds_bucket");
     }
 
     @Test
@@ -69,12 +72,15 @@ class MetricsConfigTest {
         String scrape = registry.scrape();
 
         for (String name : new String[]{
-                "lock_acquisition", "load_document", "load_intervening_ops",
-                "ot_transform_loop", "per_op_json_parse", "tree_apply",
-                "persist_operation", "publish_redis", "publish_kafka"}) {
+                "lockAcquisition", "loadDocument", "loadInterveningOps",
+                "otTransformLoop", "perOpJsonParse", "treeApply",
+                "persistOperation", "publishRedis", "publishKafka"}) {
             assertThat(scrape)
                     .as(name + " must expose p95 quantile gauge in the Prometheus scrape")
                     .contains(name + "_seconds{quantile=\"0.95\"");
+            assertThat(scrape)
+                    .as(name + " must expose histogram buckets in the Prometheus scrape")
+                    .contains(name + "_seconds_bucket");
         }
 
         for (String name : new String[]{"outbox_pending_total", "outbox_poison_total", "redis_circuit_open_total"}) {
@@ -96,6 +102,9 @@ class MetricsConfigTest {
         String scrape = registry.scrape();
         assertThat(scrape)
                 .as("someUnknownTimer (not in TIMED_OPERATIONS) must NOT produce quantile gauges")
-                .doesNotContain("some_unknown_timer_seconds{quantile=");
+                .doesNotContain("someUnknownTimer_seconds{quantile=");
+        assertThat(scrape)
+                .as("someUnknownTimer (not in TIMED_OPERATIONS) must NOT produce histogram buckets")
+                .doesNotContain("someUnknownTimer_seconds_bucket");
     }
 }
