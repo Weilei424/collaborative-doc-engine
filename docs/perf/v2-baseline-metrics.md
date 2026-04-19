@@ -46,12 +46,15 @@
 
 ## Counter Snapshot (at end of k6 run)
 
-| Counter | Value |
-|---|---|
-| `operations.accepted` | 21,260 |
-| `operations.conflicted` | — |
-| `operations.noop` | — |
-| `operations.idempotent` | — |
+> `k6 operations_accepted` is the client-side k6 counter (incremented on broadcast receipt). It is **not** the backend Micrometer counter `operations.accepted`. Populate the Micrometer rows from an `/actuator/prometheus` scrape taken at the end of the run.
+
+| Counter | Source | Value |
+|---|---|---|
+| `operations_accepted` (k6 client) | k6 summary | 21,260 |
+| `operations.accepted` (Micrometer) | `/actuator/prometheus` | — |
+| `operations.conflicted` | `/actuator/prometheus` | — |
+| `operations.noop` | `/actuator/prometheus` | — |
+| `operations.idempotent` | `/actuator/prometheus` | — |
 
 ## Placeholder Counters (expected 0 pre-V2)
 
