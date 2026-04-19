@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.CollaborationSessionSnapshot;
 import com.mwang.backend.web.model.PresenceEventResponse;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -16,14 +17,17 @@ public class RedisTemplateCollaborationEventPublisher implements RedisCollaborat
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final String collaborationInstanceId;
+    private final Timer publishRedisTimer;
 
     public RedisTemplateCollaborationEventPublisher(
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper,
-            String collaborationInstanceId) {
+            String collaborationInstanceId,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.collaborationInstanceId = collaborationInstanceId;
+        this.publishRedisTimer = Timer.builder("publishRedis").register(meterRegistry);
     }
 
     @Override
@@ -64,13 +68,16 @@ public class RedisTemplateCollaborationEventPublisher implements RedisCollaborat
 
     @Override
     public void publishAcceptedOperation(UUID documentId, AcceptedOperationResponse response) {
-        try {
-            redisTemplate.convertAndSend(
-                    RedisCollaborationChannels.documentOperations(documentId),
-                    objectMapper.writeValueAsString(new RedisAcceptedOperationEvent(collaborationInstanceId, response)));
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Failed to publish accepted operation event", exception);
-        }
+        publishRedisTimer.record(() -> {
+            try {
+                redisTemplate.convertAndSend(
+                        RedisCollaborationChannels.documentOperations(documentId),
+                        objectMapper.writeValueAsString(
+                                new RedisAcceptedOperationEvent(collaborationInstanceId, response)));
+            } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+                throw new IllegalStateException("Failed to publish accepted operation event", exception);
+            }
+        });
     }
 
     private void publish(RedisCollaborationEvent event) {
