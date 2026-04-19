@@ -6,18 +6,31 @@
 
 | Field | Value |
 |---|---|
-| Date | — |
+| Date | 2026-04-19 |
 | Compose stack | postgres:16, redis:7, kafka:3.7 |
 | JVM flags | `-Xms256m -Xmx512m` |
-| k6 script | `k6/load-test.js` |
-| k6 VUs | — |
-| k6 duration | — |
-| k6 ramp shape | — |
-| Notes | — |
+| k6 script | `load-test/benchmark.js` |
+| k6 VUs | steady=30, stress=100 |
+| k6 duration | 3m10s |
+| k6 ramp shape | 30s→30 VU, 60s steady, 30s→100 VU, 60s peak, 10s→0 |
+| Notes | p95 threshold crossed (3.83s vs 500ms budget); see Notes section |
+
+## k6 End-to-End Operation Latency
+
+> `operation_latency` measures WebSocket round-trip from SEND to broadcast receipt. This is not per-timer — it covers the full hot path including lock-wait.
+
+| Metric | Value |
+|---|---|
+| avg | 305.66 ms |
+| min | 2 ms |
+| med (p50) | 6 ms |
+| p90 | 51 ms |
+| p95 | **3.83 s** ⚠ threshold crossed |
+| max | 4.11 s |
 
 ## Hot-Path Timer Histogram (from `/actuator/prometheus`)
 
-Submit 1000+ operations during the k6 run, then scrape the actuator endpoint.
+> Actuator scrape was not captured during this run. Scrape `/actuator/prometheus` during a future run to populate per-timer p50/p95/p99 values. These are the V2 improvement gates.
 
 | Timer | p50 (ms) | p95 (ms) | p99 (ms) | max (ms) |
 |---|---|---|---|---|
@@ -35,7 +48,7 @@ Submit 1000+ operations during the k6 run, then scrape the actuator endpoint.
 
 | Counter | Value |
 |---|---|
-| `operations.accepted` | — |
+| `operations.accepted` | 21,260 |
 | `operations.conflicted` | — |
 | `operations.noop` | — |
 | `operations.idempotent` | — |
@@ -52,4 +65,7 @@ Submit 1000+ operations during the k6 run, then scrape the actuator endpoint.
 
 ## Notes
 
-<!-- Anything anomalous observed during the run — GC pauses, lock contention spikes, etc. -->
+- **p95 tail spike**: median latency is 6 ms but p95 jumps to 3.83 s — a ~640× gap. This is characteristic of pessimistic lock queuing under the 100-VU stress stage. The p90 (51 ms) shows the majority of operations are fast; the tail is driven by VUs waiting for the lock behind a long queue. P19 (optimistic locking + CAS) is the primary fix target.
+- **Actuator timers not captured**: per-timer histogram rows above are blank. To populate them, scrape `http://localhost:8080/actuator/prometheus` at steady-state during the next run and filter for `_seconds_bucket` lines.
+- **operations.conflicted / noop / idempotent**: not surfaced by the k6 script; require an actuator counter scrape or log analysis.
+- **WS connect spike**: `ws_connecting` p95 = 9 ms, max = 4.1 s — the max aligns with the stress ramp and is likely lock-induced back-pressure, not a connection-setup issue.
