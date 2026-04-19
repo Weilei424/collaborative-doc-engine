@@ -39,6 +39,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -329,5 +332,89 @@ class DocumentOperationServiceTest {
                 .isInstanceOf(InvalidOperationException.class)
                 .hasMessageContaining("Operation type");
         verify(documentRepository, never()).findById(any());
+    }
+
+    @Test
+    void submitOperation_recordsHotPathTimers() throws Exception {
+        // Arrange — minimal happy path: no intervening ops, INSERT_TEXT
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
+        DocumentTree emptyTree = new DocumentTree(List.of(
+                DocumentNode.builder().type("paragraph").build()));
+        String treeJson = mapper.writeValueAsString(emptyTree);
+        document.setContent(treeJson);
+
+        when(currentUserProvider.requireCurrentUser(any(SimpMessageHeaderAccessor.class))).thenReturn(actor);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findByIdWithPessimisticLock(documentId)).thenReturn(Optional.of(document));
+        when(operationRepository.findByDocumentIdAndOperationId(eq(documentId), eq(operationId)))
+                .thenReturn(Optional.empty());
+        when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
+                eq(documentId), anyLong())).thenReturn(List.of());
+        when(objectMapper.readValue(anyString(), eq(DocumentTree.class))).thenReturn(emptyTree);
+        when(objectMapper.writeValueAsString(any())).thenReturn(treeJson);
+        when(operationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        SubmitOperationRequest request = new SubmitOperationRequest(
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
+
+        // Act
+        service.submitOperation(documentId, request, accessorWithSession("s1"));
+
+        // Assert — each hot-path timer must have recorded exactly 1 sample
+        assertThat(meterRegistry.find("loadDocument").timer().count()).isEqualTo(1);
+        assertThat(meterRegistry.find("lockAcquisition").timer().count()).isEqualTo(1);
+        assertThat(meterRegistry.find("loadInterveningOps").timer().count()).isEqualTo(1);
+        assertThat(meterRegistry.find("otTransformLoop").timer().count()).isEqualTo(1);
+        assertThat(meterRegistry.find("treeApply").timer().count()).isEqualTo(1);
+        assertThat(meterRegistry.find("persistOperation").timer().count()).isEqualTo(1);
+
+        // New placeholder counters must be registered at zero
+        assertThat(meterRegistry.find("operations.retries").counter()).isNotNull();
+        assertThat(meterRegistry.find("operations.resync_required").counter()).isNotNull();
+    }
+
+    @Test
+    void submitOperation_recordsPerOpJsonParseTimer_whenInterveningOpsExist() throws Exception {
+        // Arrange — one intervening op so the transform loop iterates once
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
+        DocumentTree emptyTree = new DocumentTree(List.of(
+                DocumentNode.builder().type("paragraph").build()));
+        String treeJson = mapper.writeValueAsString(emptyTree);
+        document.setContent(treeJson);
+        document.setCurrentVersion(1L);
+
+        DocumentOperation interveningOp = DocumentOperation.builder()
+                .operationId(UUID.randomUUID())
+                .operationType(DocumentOperationType.INSERT_TEXT)
+                .payload("{\"path\":[0],\"offset\":5,\"text\":\" world\"}")
+                .serverVersion(1L)
+                .document(document)
+                .actor(actor)
+                .build();
+
+        when(currentUserProvider.requireCurrentUser(any(SimpMessageHeaderAccessor.class))).thenReturn(actor);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findByIdWithPessimisticLock(documentId)).thenReturn(Optional.of(document));
+        when(operationRepository.findByDocumentIdAndOperationId(eq(documentId), eq(operationId)))
+                .thenReturn(Optional.empty());
+        when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
+                eq(documentId), anyLong())).thenReturn(List.of(interveningOp));
+        when(transformer.transform(any(), any(), any(), any()))
+                .thenReturn(Optional.of(payload));
+        when(objectMapper.readTree(anyString())).thenReturn(payload);
+        when(objectMapper.readValue(anyString(), eq(DocumentTree.class))).thenReturn(emptyTree);
+        when(objectMapper.writeValueAsString(any())).thenReturn(treeJson);
+        when(operationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        SubmitOperationRequest request = new SubmitOperationRequest(
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
+
+        // Act
+        service.submitOperation(documentId, request, accessorWithSession("s1"));
+
+        // Assert — perOpJsonParse must have recorded 1 sample (one iteration)
+        assertThat(meterRegistry.find("perOpJsonParse").timer().count()).isEqualTo(1);
     }
 }
