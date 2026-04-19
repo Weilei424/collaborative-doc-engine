@@ -30,7 +30,7 @@
 
 ## Hot-Path Timer Histogram (from `/actuator/prometheus`)
 
-> Scrape `/actuator/prometheus` and search for `_seconds{quantile="0.5"`, `_seconds{quantile="0.95"`, `_seconds{quantile="0.99"`, and `_seconds_max` for each timer. Values are in seconds — multiply by 1000 for ms.
+> Values are in **milliseconds** (converted from raw seconds in the Prometheus scrape). To re-capture: scrape `/actuator/prometheus`, find `<timerName>_seconds{quantile="0.5|0.95|0.99"}` and `<timerName>_seconds_max`, multiply each raw value by 1000.
 
 | Timer | p50 (ms)  | p95 (ms)  | p99 (ms)  | max (ms)  |
 |---|-----------|-----------|-----------|-----------|
@@ -71,6 +71,6 @@
 - **p95 tail spike**: median latency is 6 ms but p95 jumps to 3.83 s — a ~640× gap. This is characteristic of pessimistic lock queuing under the 100-VU stress stage. The p90 (51 ms) shows the majority of operations are fast; the tail is driven by VUs waiting for the lock behind a long queue. P19 (optimistic locking + CAS) is the primary fix target.
 - **`perOpJsonParse` all zeros**: expected — this timer is only recorded inside the OT transform loop when there are intervening ops to parse. The sequential k6 workload (each op confirmed before the next is sent) produces zero intervening ops on every submission.
 - **`lockAcquisition` fast despite 100-VU peak**: expected — `benchmark.js` assigns each VU its own document, so there is no actual lock contention. Use `benchmark-contention.js` for a contention baseline.
-- **3.83s k6 p95 not explained by individual timers**: the sum of all timer p99 values is ~13.7ms, far below 3.83s. The tail latency is outside the measured hot path — likely STOMP broadcast thread backpressure or async dispatch queue depth under peak load.
+- **3.83s k6 p95 not explained by individual timers**: the sum of all timer p99 values is ~13.7ms, far below 3.83s. The tail latency is outside the measured hot path — likely STOMP broadcast thread backpressure or async dispatch queue depth under peak load. Histogram bucket data (`_seconds_bucket`) is also available in `/actuator/prometheus` for further analysis.
 - **operations.conflicted / noop / idempotent all zero**: correct for the non-contention benchmark workload.
 - **WS connect spike**: `ws_connecting` p95 = 9 ms, max = 4.1 s — the max aligns with the stress ramp and is likely lock-induced back-pressure, not a connection-setup issue.
