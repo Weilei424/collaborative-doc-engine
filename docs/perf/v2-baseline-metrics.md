@@ -30,7 +30,7 @@
 
 ## Hot-Path Timer Histogram (from `/actuator/prometheus`)
 
-> Values are in **milliseconds** (converted from raw seconds in the Prometheus scrape). To re-capture: scrape `/actuator/prometheus`, find `<timerName>_seconds{quantile="0.5|0.95|0.99"}` and `<timerName>_seconds_max`, multiply each raw value by 1000.
+> Values are in **milliseconds**. These were captured while the histogram config published client-side quantile gauges (`percentiles()`). The current config publishes only bucket lines (`percentilesHistogram(true)`). To re-capture percentiles, run `histogram_quantile(0.95, rate(<timerName>_seconds_bucket[1m]))` in Prometheus against a live scrape, or read `<timerName>_seconds_max` directly from `/actuator/prometheus` for the max column.
 
 | Timer | p50 (ms)  | p95 (ms)  | p99 (ms)  | max (ms)  |
 |---|-----------|-----------|-----------|-----------|
