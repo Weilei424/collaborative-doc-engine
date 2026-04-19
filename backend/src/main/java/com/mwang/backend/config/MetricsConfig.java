@@ -27,6 +27,7 @@ public class MetricsConfig {
                 if (TIMED_OPERATIONS.contains(id.getName())) {
                     return DistributionStatisticConfig.builder()
                             .percentiles(0.5, 0.95, 0.99)
+                            .percentilesHistogram(true)
                             .build()
                             .merge(config);
                 }
