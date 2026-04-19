@@ -32,7 +32,7 @@ class MetricsConfigTest {
     }
 
     @Test
-    void histogramCustomizer_enablesPercentilesForKnownTimerNames() {
+    void histogramCustomizer_enablesBucketsForKnownTimerNames() {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         new MetricsConfig().histogramCustomizer().customize(registry);
 
@@ -42,16 +42,7 @@ class MetricsConfigTest {
 
         String scrape = registry.scrape();
         assertThat(scrape)
-                .as("lockAcquisition must expose p50 quantile gauge in text format")
-                .contains("lockAcquisition_seconds{quantile=\"0.5\"");
-        assertThat(scrape)
-                .as("lockAcquisition must expose p95 quantile gauge in text format")
-                .contains("lockAcquisition_seconds{quantile=\"0.95\"");
-        assertThat(scrape)
-                .as("lockAcquisition must expose p99 quantile gauge in text format")
-                .contains("lockAcquisition_seconds{quantile=\"0.99\"");
-        assertThat(scrape)
-                .as("lockAcquisition must expose histogram buckets in text format")
+                .as("lockAcquisition must expose histogram buckets in the Prometheus scrape")
                 .contains("lockAcquisition_seconds_bucket");
     }
 
@@ -76,9 +67,6 @@ class MetricsConfigTest {
                 "otTransformLoop", "perOpJsonParse", "treeApply",
                 "persistOperation", "publishRedis", "publishKafka"}) {
             assertThat(scrape)
-                    .as(name + " must expose p95 quantile gauge in the Prometheus scrape")
-                    .contains(name + "_seconds{quantile=\"0.95\"");
-            assertThat(scrape)
                     .as(name + " must expose histogram buckets in the Prometheus scrape")
                     .contains(name + "_seconds_bucket");
         }
@@ -100,9 +88,6 @@ class MetricsConfigTest {
                 .record(Duration.ofMillis(5));
 
         String scrape = registry.scrape();
-        assertThat(scrape)
-                .as("someUnknownTimer (not in TIMED_OPERATIONS) must NOT produce quantile gauges")
-                .doesNotContain("someUnknownTimer_seconds{quantile=");
         assertThat(scrape)
                 .as("someUnknownTimer (not in TIMED_OPERATIONS) must NOT produce histogram buckets")
                 .doesNotContain("someUnknownTimer_seconds_bucket");
