@@ -19,6 +19,8 @@ import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.SubmitOperationRequest;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -416,5 +418,24 @@ class DocumentOperationServiceTest {
 
         // Assert — perOpJsonParse must have recorded 1 sample (one iteration)
         assertThat(meterRegistry.find("perOpJsonParse").timer().count()).isEqualTo(1);
+    }
+
+    @Test
+    void serviceConstructor_registersRetriesAndResyncCounters_inPrometheusFormat() {
+        PrometheusMeterRegistry prometheusRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        new DocumentOperationServiceImpl(
+                mock(DocumentRepository.class),
+                mock(DocumentOperationRepository.class),
+                mock(CurrentUserProvider.class),
+                mock(DocumentAuthorizationService.class),
+                mock(OperationTransformer.class),
+                mock(ObjectMapper.class),
+                mock(ApplicationEventPublisher.class),
+                mock(EntityManager.class),
+                prometheusRegistry);
+
+        String scrape = prometheusRegistry.scrape();
+        assertThat(scrape).contains("operations_retries_total");
+        assertThat(scrape).contains("operations_resync_required_total");
     }
 }
