@@ -48,6 +48,38 @@ class MetricsConfigTest {
     }
 
     @Test
+    void prometheusScrapeSurface_allNineTimersAndThreeCountersPresent() {
+        PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        MetricsConfig config = new MetricsConfig();
+        config.histogramCustomizer().customize(registry);
+        config.placeholderMetrics().bindTo(registry);
+
+        for (String name : new String[]{
+                "lockAcquisition", "loadDocument", "loadInterveningOps",
+                "otTransformLoop", "perOpJsonParse", "treeApply",
+                "persistOperation", "publishRedis", "publishKafka"}) {
+            Timer.builder(name).register(registry).record(Duration.ofMillis(1));
+        }
+
+        String scrape = registry.scrape();
+
+        for (String name : new String[]{
+                "lockAcquisition", "loadDocument", "loadInterveningOps",
+                "otTransformLoop", "perOpJsonParse", "treeApply",
+                "persistOperation", "publishRedis", "publishKafka"}) {
+            assertThat(scrape)
+                    .as(name + " must appear as a histogram in the Prometheus scrape")
+                    .contains(name + "_seconds_bucket");
+        }
+
+        for (String name : new String[]{"outbox_pending_total", "outbox_poison_total", "redis_circuit_open_total"}) {
+            assertThat(scrape)
+                    .as(name + " must appear in the Prometheus scrape")
+                    .contains(name);
+        }
+    }
+
+    @Test
     void histogramCustomizer_doesNotEnableBucketsForUnknownTimerNames() {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         new MetricsConfig().histogramCustomizer().customize(registry);
