@@ -48,11 +48,15 @@ class MetricsConfigTest {
     }
 
     @Test
-    void prometheusScrapeSurface_allNineTimersAndThreeCountersPresent() {
+    void prometheusScrapeSurface_allNineTimersAndFiveCountersPresent() {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         MetricsConfig config = new MetricsConfig();
         config.histogramCustomizer().customize(registry);
         config.placeholderMetrics().bindTo(registry);
+
+        // Simulate service-registered counters (DocumentOperationServiceImpl constructor)
+        registry.counter("operations.retries");
+        registry.counter("operations.resync_required");
 
         for (String name : new String[]{
                 "lockAcquisition", "loadDocument", "loadInterveningOps",
@@ -72,7 +76,9 @@ class MetricsConfigTest {
                     .contains(name + "_seconds_bucket");
         }
 
-        for (String name : new String[]{"outbox_pending_total", "outbox_poison_total", "redis_circuit_open_total"}) {
+        for (String name : new String[]{
+                "outbox_pending_total", "outbox_poison_total", "redis_circuit_open_total",
+                "operations_retries_total", "operations_resync_required_total"}) {
             assertThat(scrape)
                     .as(name + " must appear in the Prometheus scrape")
                     .contains(name);
