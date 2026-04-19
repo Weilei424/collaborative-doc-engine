@@ -32,7 +32,8 @@ class RedisTemplateCollaborationEventPublisherTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
-        publisher = new RedisTemplateCollaborationEventPublisher(redisTemplate, objectMapper, INSTANCE_ID);
+        publisher = new RedisTemplateCollaborationEventPublisher(
+                redisTemplate, objectMapper, INSTANCE_ID, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     @Test
@@ -59,6 +60,19 @@ class RedisTemplateCollaborationEventPublisherTest {
         RedisAcceptedOperationEvent event = objectMapper.readValue(captor.getValue(), RedisAcceptedOperationEvent.class);
         assertThat(event.publisherInstanceId()).isEqualTo(INSTANCE_ID);
         assertThat(event.payload().documentId()).isEqualTo(documentId);
+    }
+
+    @Test
+    void publishAcceptedOperation_recordsPublishRedisTimer() {
+        UUID documentId = UUID.randomUUID();
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        RedisTemplateCollaborationEventPublisher pub =
+                new RedisTemplateCollaborationEventPublisher(redisTemplate, objectMapper, INSTANCE_ID, registry);
+
+        pub.publishAcceptedOperation(documentId, buildResponse(documentId));
+
+        assertThat(registry.find("publishRedis").timer().count()).isEqualTo(1);
     }
 
     private AcceptedOperationResponse buildResponse(UUID documentId) {
