@@ -41,7 +41,9 @@ class KafkaOperationEventPublisherTest {
         // maxAttempts=1 so tests don't sleep through backoff
         RetryTemplate retryTemplate = RetryTemplate.builder().maxAttempts(1).build();
 
-        publisher = new KafkaOperationEventPublisher(kafkaTemplate, objectMapper, retryTemplate);
+        publisher = new KafkaOperationEventPublisher(
+                kafkaTemplate, objectMapper, retryTemplate,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         ReflectionTestUtils.setField(publisher, "operationsTopic", "document-operations");
 
         // Default: send() returns a completed future so .get() doesn't NPE
@@ -95,10 +97,29 @@ class KafkaOperationEventPublisherTest {
 
         KafkaOperationEventPublisher failingPublisher =
                 new KafkaOperationEventPublisher(kafkaTemplate, objectMapper,
-                        RetryTemplate.builder().maxAttempts(1).build());
+                        RetryTemplate.builder().maxAttempts(1).build(),
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         ReflectionTestUtils.setField(failingPublisher, "operationsTopic", "document-operations");
 
         assertThatNoException().isThrownBy(() -> failingPublisher.onAcceptedOperation(event));
         verify(kafkaTemplate, times(1)).send(any(), any(), any());
+    }
+
+    @Test
+    void onAcceptedOperation_recordsPublishKafkaTimer() throws Exception {
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        KafkaOperationEventPublisher pub =
+                new KafkaOperationEventPublisher(kafkaTemplate, objectMapper,
+                        RetryTemplate.builder().maxAttempts(1).build(), registry);
+        ReflectionTestUtils.setField(
+                pub, "operationsTopic", "document-operations");
+
+        when(kafkaTemplate.send(any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        pub.onAcceptedOperation(event);
+
+        assertThat(registry.find("publishKafka").timer().count()).isEqualTo(1);
     }
 }
