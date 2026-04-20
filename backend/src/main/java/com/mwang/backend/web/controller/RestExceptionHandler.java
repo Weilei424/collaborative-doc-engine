@@ -16,7 +16,9 @@ import com.mwang.backend.service.exception.UserContextRequiredException;
 import com.mwang.backend.service.exception.UserNotFoundException;
 import com.mwang.backend.service.exception.UsernameAlreadyExistsException;
 import com.mwang.backend.web.model.ApiErrorResponse;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -49,6 +51,13 @@ public class RestExceptionHandler {
     @ExceptionHandler(DocumentAccessDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleDocumentAccessDenied(DocumentAccessDeniedException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiErrorResponse.of("DOCUMENT_ACCESS_DENIED", ex.getMessage()));
+    }
+
+    @ExceptionHandler(RequestNotPermitted.class)
+    public ResponseEntity<ApiErrorResponse> handleRateLimitExceeded(RequestNotPermitted ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, "60")
+                .body(ApiErrorResponse.of("RATE_LIMIT_EXCEEDED", "Too many requests. Please try again later."));
     }
 
     @ExceptionHandler(InvalidDocumentScopeException.class)
