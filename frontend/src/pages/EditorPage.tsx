@@ -83,12 +83,14 @@ export function EditorPage() {
     sessionId,
     currentVersion,
     submitOperation: stableSubmitOp,
+    token,
   })
 
   const { connected, submitOperation } = useCollaboration({
     documentId: documentId!,
     token,
     sessionId,
+    lastServerVersionRef: currentVersion,
     onOperation: stableOnOperation,
     onSession: setSessionSnapshot,
     onPresence,
