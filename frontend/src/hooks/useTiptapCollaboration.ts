@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
 import type { Editor } from '@tiptap/react'
 import { v4 as uuidv4 } from 'uuid'
@@ -23,18 +23,25 @@ interface Options {
   sessionId: string
   currentVersion: MutableRefObject<number>
   submitOperation: (req: SubmitOperationRequest) => void
+  token: string | null
 }
 
 export function useTiptapCollaboration({
   editor,
+  documentId,
   sessionId,
   currentVersion,
   submitOperation,
+  token,
 }: Options) {
   const pendingOps = useRef<Map<string, PendingEntry>>(new Map())
   // True while applying a remote (or corrective) operation so that onTransaction
   // does not re-classify and re-submit the resulting Tiptap transaction.
   const isApplyingRemote = useRef(false)
+
+  const gapBuffer = useRef<Map<number, AcceptedOperationResponse>>(new Map())
+  const fetchingGap = useRef(false)
+  const selfRef = useRef<(op: AcceptedOperationResponse) => void>(() => {})
 
   // Called by EditorPage on each Tiptap 'transaction' event
   const onTransaction = useCallback(
@@ -71,10 +78,44 @@ export function useTiptapCollaboration({
   // Called by useCollaboration.onOperation when an accepted operation arrives
   const onAcceptedOperation = useCallback(
     (op: AcceptedOperationResponse) => {
+      // Duplicate delivery — already applied via live topic before catchup queue arrived
+      if (op.serverVersion <= currentVersion.current) {
+        return
+      }
+
+      // Gap detection: op arrived out of order — a Redis message was lost
+      if (op.serverVersion > currentVersion.current + 1) {
+        gapBuffer.current.set(op.serverVersion, op)
+        if (!fetchingGap.current) {
+          fetchingGap.current = true
+          fetchGapFill(documentId, currentVersion.current, token)
+            .then(ops => {
+              for (const o of ops) selfRef.current(o)
+              // Drain any buffered ops that are now contiguous
+              let next = currentVersion.current + 1
+              while (gapBuffer.current.has(next)) {
+                selfRef.current(gapBuffer.current.get(next)!)
+                gapBuffer.current.delete(next)
+                next++
+              }
+              if (gapBuffer.current.size > 0) {
+                console.warn('[collab] Gap fill left', gapBuffer.current.size, 'buffered ops unresolved — partial convergence')
+              }
+            })
+            .catch((err) => {
+              console.warn('[collab] Gap fill failed — client may be out of sync:', err)
+            })
+            .finally(() => {
+              fetchingGap.current = false
+            })
+        }
+        return
+      }
+
+      // --- existing apply logic below, unchanged ---
       currentVersion.current = op.serverVersion
       const pending = pendingOps.current.get(op.operationId)
       if (pending) {
-        // Own echo — version already advanced above
         pendingOps.current.delete(op.operationId)
         const needsReconcile =
           op.operationType === 'NO_OP' ||
@@ -83,7 +124,6 @@ export function useTiptapCollaboration({
         if (needsReconcile && editor) {
           isApplyingRemote.current = true
           try {
-            // Revert the optimistic application by inverting the stored step.
             const view = editor.view
             let tr = view.state.tr
             for (let i = pending.steps.length - 1; i >= 0; i--) {
@@ -92,7 +132,6 @@ export function useTiptapCollaboration({
             }
             view.dispatch(tr)
 
-            // For non-NO_OP, re-apply the server's authoritative transformed payload.
             if (op.operationType !== 'NO_OP') {
               applyAcceptedOperation(editor, op)
             }
@@ -112,10 +151,45 @@ export function useTiptapCollaboration({
         isApplyingRemote.current = false
       }
     },
-    [editor],
+    [editor, documentId, token],
   )
 
+  useEffect(() => {
+    selfRef.current = onAcceptedOperation
+  }, [onAcceptedOperation])
+
   return { onTransaction, onAcceptedOperation }
+}
+
+// ─── Gap Fill ────────────────────────────────────────────────────────────────
+
+async function fetchGapFill(
+  documentId: string,
+  sinceVersion: number,
+  token: string | null,
+): Promise<AcceptedOperationResponse[]> {
+  const result: AcceptedOperationResponse[] = []
+  let currentSince = sinceVersion
+  let hasMore = true
+  while (hasMore) {
+    const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+    let res: Response
+    try {
+      res = await fetch(
+        `/api/documents/${documentId}/operations?sinceVersion=${currentSince}&limit=500`,
+        { headers },
+      )
+    } catch {
+      break
+    }
+    if (!res.ok) break
+    const page = await res.json()
+    const ops = page.operations as AcceptedOperationResponse[]
+    result.push(...ops)
+    if (ops.length > 0) currentSince = ops[ops.length - 1].serverVersion
+    hasMore = page.hasMore as boolean
+  }
+  return result
 }
 
 // ─── Step Classification ──────────────────────────────────────────────────────
