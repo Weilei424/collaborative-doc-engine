@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { MutableRefObject } from 'react'
 import { Client } from '@stomp/stompjs'
 import type { StompSubscription } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
@@ -13,6 +14,7 @@ interface Options {
   documentId: string
   token: string | null
   sessionId: string
+  lastServerVersionRef: MutableRefObject<number>
   onOperation: (op: AcceptedOperationResponse) => void
   onSession: (snapshot: SessionSnapshot) => void
   onPresence: (event: PresenceEvent) => void
@@ -23,6 +25,7 @@ export function useCollaboration({
   documentId,
   token,
   sessionId,
+  lastServerVersionRef,
   onOperation,
   onSession,
   onPresence,
@@ -66,10 +69,13 @@ export function useCollaboration({
         setConnected(true)
         const subs: StompSubscription[] = []
 
-        client.publish({
-          destination: `/app/documents/${documentId}/sessions.join`,
-          body: JSON.stringify({ sessionId }),
-        })
+        // Subscribe to catchup FIRST, before triggering any server-side operations
+        // This ensures the client is listening before the server can enqueue catchup frames
+        subs.push(
+          client.subscribe(`/user/queue/catchup.${documentId}`, msg =>
+            onOperation(JSON.parse(msg.body)),
+          ),
+        )
 
         subs.push(
           client.subscribe(`/topic/documents/${documentId}/sessions`, msg =>
@@ -94,9 +100,20 @@ export function useCollaboration({
             ),
           )
         }
+
+        client.publish({
+          destination: `/app/documents/${documentId}/sessions.join`,
+          body: JSON.stringify({ sessionId }),
+        })
       },
       onDisconnect: () => setConnected(false),
     })
+
+    client.beforeConnect = () => {
+      client.connectHeaders = {
+        [`X-Last-Server-Version-${documentId}`]: String(lastServerVersionRef.current),
+      }
+    }
 
     clientRef.current = client
     client.activate()
