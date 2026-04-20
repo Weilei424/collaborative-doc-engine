@@ -150,27 +150,31 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         DocumentOperationType currentType = request.operationType();
         JsonNode currentPayload = request.payload();
         long loopStart = System.nanoTime();
-        for (DocumentOperation accepted : intervening) {
-            long parseStart = System.nanoTime();
-            JsonNode acceptedPayload;
-            try {
-                acceptedPayload = objectMapper.readTree(accepted.getPayload());
-            } catch (Exception e) {
-                throw new IllegalStateException("Failed to deserialize accepted operation payload", e);
-            }
-            perOpJsonParseTimer.record(System.nanoTime() - parseStart, java.util.concurrent.TimeUnit.NANOSECONDS);
+        try {
+            for (DocumentOperation accepted : intervening) {
+                long parseStart = System.nanoTime();
+                JsonNode acceptedPayload;
+                try {
+                    acceptedPayload = objectMapper.readTree(accepted.getPayload());
+                } catch (Exception e) {
+                    throw new IllegalStateException("Failed to deserialize accepted operation payload", e);
+                } finally {
+                    perOpJsonParseTimer.record(System.nanoTime() - parseStart, java.util.concurrent.TimeUnit.NANOSECONDS);
+                }
 
-            Optional<JsonNode> transformed = transformer.transform(
-                    currentType, currentPayload, accepted.getOperationType(), acceptedPayload);
-            if (transformed.isEmpty()) {
-                noopCounter.increment();
-                currentType = DocumentOperationType.NO_OP;
-                currentPayload = objectMapper.createObjectNode();
-                break;
+                Optional<JsonNode> transformed = transformer.transform(
+                        currentType, currentPayload, accepted.getOperationType(), acceptedPayload);
+                if (transformed.isEmpty()) {
+                    noopCounter.increment();
+                    currentType = DocumentOperationType.NO_OP;
+                    currentPayload = objectMapper.createObjectNode();
+                    break;
+                }
+                currentPayload = transformed.get();
             }
-            currentPayload = transformed.get();
+        } finally {
+            otTransformLoopTimer.record(System.nanoTime() - loopStart, java.util.concurrent.TimeUnit.NANOSECONDS);
         }
-        otTransformLoopTimer.record(System.nanoTime() - loopStart, java.util.concurrent.TimeUnit.NANOSECONDS);
 
         // 8. Apply to document tree (skip for NO_OP)
         long nextVersion = document.getCurrentVersion() + 1;
