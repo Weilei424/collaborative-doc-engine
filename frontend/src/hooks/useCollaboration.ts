@@ -69,11 +69,13 @@ export function useCollaboration({
         setConnected(true)
         const subs: StompSubscription[] = []
 
-        // Subscribe to catchup FIRST, before triggering any server-side operations
-        // This ensures the client is listening before the server can enqueue catchup frames
+        // Subscribe to catchup FIRST — the server triggers replay on this subscribe event,
+        // so the subscription must exist before the server sends any catchup frames.
         subs.push(
-          client.subscribe(`/user/queue/catchup.${documentId}`, msg =>
-            onOperation(JSON.parse(msg.body)),
+          client.subscribe(
+            `/user/queue/catchup.${documentId}`,
+            msg => onOperation(JSON.parse(msg.body)),
+            { 'X-Last-Server-Version': String(lastServerVersionRef.current) },
           ),
         )
 
@@ -108,12 +110,6 @@ export function useCollaboration({
       },
       onDisconnect: () => setConnected(false),
     })
-
-    client.beforeConnect = () => {
-      client.connectHeaders = {
-        [`X-Last-Server-Version-${documentId}`]: String(lastServerVersionRef.current),
-      }
-    }
 
     clientRef.current = client
     client.activate()
