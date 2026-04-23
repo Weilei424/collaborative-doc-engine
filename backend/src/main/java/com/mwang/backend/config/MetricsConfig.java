@@ -1,5 +1,7 @@
 package com.mwang.backend.config;
 
+import com.mwang.backend.repositories.DocumentOperationRepository;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.MeterBinder;
@@ -36,10 +38,14 @@ public class MetricsConfig {
     }
 
     @Bean
-    MeterBinder placeholderMetrics() {
+    MeterBinder outboxGauges(DocumentOperationRepository repo) {
         return registry -> {
-            registry.counter("outbox.pending");
-            registry.counter("outbox.poison");
+            Gauge.builder("outbox.pending", repo, DocumentOperationRepository::countPending)
+                 .description("Unpublished, non-poison outbox rows")
+                 .register(registry);
+            Gauge.builder("outbox.poison", repo, DocumentOperationRepository::countPoison)
+                 .description("Poison outbox rows requiring operator attention")
+                 .register(registry);
             registry.counter("redis.circuit_open");
         };
     }
