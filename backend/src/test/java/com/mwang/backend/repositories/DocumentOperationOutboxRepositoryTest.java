@@ -55,7 +55,7 @@ class DocumentOperationOutboxRepositoryTest extends AbstractIntegrationTest {
 
     @Test
     void claimBatch_excludesPoisonedRow() {
-        operationRepo.markPoison(savedOp.getId(), Instant.now());
+        operationRepo.markPoison(savedOp.getId(), Instant.now(), 10, "max attempts reached");
         List<DocumentOperation> claimed = operationRepo.claimBatch(Instant.now(), 10);
         assertThat(claimed).extracting(DocumentOperation::getId).doesNotContain(savedOp.getId());
     }
@@ -87,10 +87,12 @@ class DocumentOperationOutboxRepositoryTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void markPoison_setsPoisonAt() {
-        operationRepo.markPoison(savedOp.getId(), Instant.now());
+    void markPoison_setsPoisonAtAndRecordsFinalAttemptAndError() {
+        operationRepo.markPoison(savedOp.getId(), Instant.now(), 10, "broker refused");
         DocumentOperation reloaded = operationRepo.findById(savedOp.getId()).orElseThrow();
         assertThat(reloaded.getKafkaPoisonAt()).isNotNull();
+        assertThat(reloaded.getKafkaPublishAttempts()).isEqualTo(10);
+        assertThat(reloaded.getKafkaLastError()).isEqualTo("broker refused");
     }
 
     @Test
@@ -104,7 +106,7 @@ class DocumentOperationOutboxRepositoryTest extends AbstractIntegrationTest {
     @Test
     void countPoison_reflectsPoisonRows() {
         long before = operationRepo.countPoison();
-        operationRepo.markPoison(savedOp.getId(), Instant.now());
+        operationRepo.markPoison(savedOp.getId(), Instant.now(), 10, "max attempts reached");
         long after = operationRepo.countPoison();
         assertThat(after).isGreaterThan(before);
     }
