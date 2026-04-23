@@ -1,17 +1,18 @@
 package com.mwang.backend.kafka;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mwang.backend.domain.DocumentOperationType;
+import com.mwang.backend.domain.*;
+import com.mwang.backend.repositories.DocumentOperationRepository;
+import com.mwang.backend.repositories.DocumentRepository;
+import com.mwang.backend.repositories.UserRepository;
 import com.mwang.backend.testcontainers.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.UUID;
 
 import static org.awaitility.Awaitility.await;
@@ -19,33 +20,72 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 
 @SpringBootTest
+@TestPropertySource(properties = {
+        "collaboration.outbox.poll-interval-ms=100",
+        "collaboration.outbox.backoff-ms=500",
+        "collaboration.outbox.backoff-cap-ms=2000"
+})
 class KafkaAcceptedOperationIntegrationTest extends AbstractIntegrationTest {
 
-    @Autowired
-    private KafkaTemplate<String, String> kafkaTemplate;
+    @Autowired DocumentOperationRepository operationRepo;
+    @Autowired UserRepository userRepo;
+    @Autowired DocumentRepository documentRepo;
+    @Autowired ObjectMapper objectMapper;
 
     @MockitoSpyBean
-    private KafkaOperationNotificationConsumer consumer;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    @Value("${kafka.topics.document-operations}")
-    private String operationsTopic;
+    KafkaOperationNotificationConsumer consumer;
 
     @Test
-    void consumerReceivesPublishedOperationEvent() throws Exception {
-        UUID documentId = UUID.randomUUID();
-        KafkaAcceptedOperationEvent event = new KafkaAcceptedOperationEvent(
-                UUID.randomUUID(), documentId, UUID.randomUUID(),
-                "sess-it", 0L, 1L, DocumentOperationType.INSERT_TEXT,
-                objectMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hello\"}"),
-                Instant.now());
-
-        kafkaTemplate.send(operationsTopic, documentId.toString(),
-                objectMapper.writeValueAsString(event));
+    void pollerPublishesOutboxRowAndConsumerReceivesIt() {
+        User user = userRepo.save(User.builder()
+                .username("outbox-it-" + UUID.randomUUID())
+                .email(UUID.randomUUID() + "@test.com")
+                .build());
+        Document doc = documentRepo.save(Document.builder()
+                .title("IT Doc")
+                .content("{\"blocks\":[]}")
+                .owner(user)
+                .build());
+        operationRepo.save(DocumentOperation.builder()
+                .document(doc)
+                .actor(user)
+                .operationId(UUID.randomUUID())
+                .clientSessionId("sess-it")
+                .baseVersion(0L)
+                .serverVersion(1L)
+                .operationType(DocumentOperationType.INSERT_TEXT)
+                .payload("{\"path\":[0],\"offset\":0,\"text\":\"hello\"}")
+                .build());
 
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
                 verify(consumer).onAcceptedOperation(any()));
+    }
+
+    @Test
+    void pollerMarksRowPublishedAfterSuccessfulSend() {
+        User user = userRepo.save(User.builder()
+                .username("outbox-mark-" + UUID.randomUUID())
+                .email(UUID.randomUUID() + "@test.com")
+                .build());
+        Document doc = documentRepo.save(Document.builder()
+                .title("Mark Doc")
+                .content("{\"blocks\":[]}")
+                .owner(user)
+                .build());
+        var op = operationRepo.save(DocumentOperation.builder()
+                .document(doc)
+                .actor(user)
+                .operationId(UUID.randomUUID())
+                .clientSessionId("sess-mark")
+                .baseVersion(0L)
+                .serverVersion(2L)
+                .operationType(DocumentOperationType.INSERT_TEXT)
+                .payload("{\"path\":[0],\"offset\":0,\"text\":\"world\"}")
+                .build());
+
+        await().atMost(Duration.ofSeconds(10)).until(() ->
+                operationRepo.findById(op.getId())
+                        .map(r -> r.getPublishedToKafkaAt() != null)
+                        .orElse(false));
     }
 }
