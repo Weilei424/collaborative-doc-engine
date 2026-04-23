@@ -251,7 +251,7 @@ class DocumentOperationServiceTest {
     }
 
     @Test
-    void submitOperationPublishesDomainEventForNewOperation() throws Exception {
+    void submitOperation_persistsNewOperation_eligibleForOutboxPoller() throws Exception {
         JsonNode payload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         SimpMessageHeaderAccessor pubAccessor = mock(SimpMessageHeaderAccessor.class);
         when(pubAccessor.getSessionId()).thenReturn("sess-pub");
@@ -271,20 +271,19 @@ class DocumentOperationServiceTest {
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
 
-        service.submitOperation(documentId, request, pubAccessor);
+        AcceptedOperationResponse response = service.submitOperation(documentId, request, pubAccessor);
 
-        ArgumentCaptor<AcceptedOperationDomainEvent> captor =
-                ArgumentCaptor.forClass(AcceptedOperationDomainEvent.class);
-        verify(eventPublisher).publishEvent(captor.capture());
-        AcceptedOperationDomainEvent published = captor.getValue();
-        assertThat(published.response().operationId()).isEqualTo(operationId);
-        assertThat(published.response().documentId()).isEqualTo(documentId);
-        assertThat(published.response().serverVersion()).isEqualTo(1L);
-        assertThat(published.baseVersion()).isEqualTo(0L);
+        // Operation must be persisted so the outbox poller can pick it up
+        ArgumentCaptor<DocumentOperation> captor = ArgumentCaptor.forClass(DocumentOperation.class);
+        verify(operationRepository).save(captor.capture());
+        assertThat(captor.getValue().getOperationId()).isEqualTo(operationId);
+        assertThat(response.operationId()).isEqualTo(operationId);
+        assertThat(response.documentId()).isEqualTo(documentId);
+        assertThat(response.serverVersion()).isEqualTo(1L);
     }
 
     @Test
-    void submitOperationDoesNotPublishDomainEventForIdempotentDuplicate() throws Exception {
+    void submitOperation_idempotentDuplicate_doesNotPersistNewOperation() throws Exception {
         JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
@@ -303,7 +302,8 @@ class DocumentOperationServiceTest {
 
         service.submitOperation(documentId, request, accessor);
 
-        verify(eventPublisher, never()).publishEvent(any());
+        // No new operation row must be saved for a duplicate submission
+        verify(operationRepository, never()).save(any(DocumentOperation.class));
     }
 
     @Test
