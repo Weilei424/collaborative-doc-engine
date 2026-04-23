@@ -67,6 +67,6 @@ public interface DocumentOperationRepository extends JpaRepository<DocumentOpera
 
     @Modifying
     @Transactional
-    @Query("UPDATE DocumentOperation o SET o.kafkaPoisonAt = :at WHERE o.id = :id")
-    void markPoison(@Param("id") UUID id, @Param("at") Instant at);
+    @Query("UPDATE DocumentOperation o SET o.kafkaPoisonAt = :at, o.kafkaPublishAttempts = :attempts, o.kafkaLastError = :error WHERE o.id = :id")
+    void markPoison(@Param("id") UUID id, @Param("at") Instant at, @Param("attempts") int attempts, @Param("error") String error);
 }
