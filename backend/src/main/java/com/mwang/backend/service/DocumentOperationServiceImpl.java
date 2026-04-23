@@ -8,7 +8,6 @@ import com.mwang.backend.domain.DocumentOperation;
 import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.domain.model.DocumentTree;
-import com.mwang.backend.kafka.AcceptedOperationDomainEvent;
 import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
@@ -20,7 +19,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.persistence.EntityManager;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,7 +37,6 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     private final DocumentAuthorizationService authorizationService;
     private final OperationTransformer transformer;
     private final ObjectMapper objectMapper;
-    private final ApplicationEventPublisher eventPublisher;
     private final EntityManager entityManager;
     private final Counter conflictedCounter;
     private final Counter noopCounter;
@@ -62,7 +59,6 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             DocumentAuthorizationService authorizationService,
             OperationTransformer transformer,
             ObjectMapper objectMapper,
-            ApplicationEventPublisher eventPublisher,
             EntityManager entityManager,
             MeterRegistry meterRegistry) {
         this.documentRepository = documentRepository;
@@ -71,7 +67,6 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         this.authorizationService = authorizationService;
         this.transformer = transformer;
         this.objectMapper = objectMapper;
-        this.eventPublisher = eventPublisher;
         this.entityManager = entityManager;
         this.meterRegistry = meterRegistry;
         this.conflictedCounter = meterRegistry.counter("operations.conflicted");
@@ -221,8 +216,6 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                 request.operationId(), documentId, nextVersion,
                 currentType, currentPayload, actor.getId(),
                 clientSessionId, accepted.getCreatedAt() != null ? accepted.getCreatedAt() : Instant.now());
-
-        eventPublisher.publishEvent(new AcceptedOperationDomainEvent(acceptedResponse, request.baseVersion()));
 
         return acceptedResponse;
     }
