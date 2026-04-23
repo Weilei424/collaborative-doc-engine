@@ -64,6 +64,21 @@ public class DocumentOperation {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    @Column(name = "published_to_kafka_at", insertable = false, updatable = false)
+    private Instant publishedToKafkaAt;
+
+    @Column(name = "kafka_publish_attempts", insertable = false, updatable = false)
+    private int kafkaPublishAttempts;
+
+    @Column(name = "kafka_last_error", insertable = false, updatable = false)
+    private String kafkaLastError;
+
+    @Column(name = "kafka_poison_at", insertable = false, updatable = false)
+    private Instant kafkaPoisonAt;
+
+    @Column(name = "next_attempt_at", insertable = false, updatable = false)
+    private Instant nextAttemptAt;
+
     @Override
     public final boolean equals(Object o) {
         if (this == o) return true;
