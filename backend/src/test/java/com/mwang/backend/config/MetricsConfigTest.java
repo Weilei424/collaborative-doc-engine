@@ -1,6 +1,8 @@
 package com.mwang.backend.config;
 
+import com.mwang.backend.repositories.DocumentOperationRepository;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.prometheusmetrics.PrometheusConfig;
@@ -10,24 +12,24 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class MetricsConfigTest {
 
     @Test
-    void placeholderMetrics_registersOutboxAndCircuitBreakerCounters() {
+    void outboxGauges_registersGaugesAndCircuitBreakerCounter() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        DocumentOperationRepository repo = mock(DocumentOperationRepository.class);
 
-        new MetricsConfig().placeholderMetrics().bindTo(registry);
+        new MetricsConfig().outboxGauges(repo).bindTo(registry);
 
-        Counter outboxPending = registry.find("outbox.pending").counter();
-        Counter outboxPoison = registry.find("outbox.poison").counter();
+        Gauge outboxPending = registry.find("outbox.pending").gauge();
+        Gauge outboxPoison = registry.find("outbox.poison").gauge();
         Counter redisCircuitOpen = registry.find("redis.circuit_open").counter();
 
         assertThat(outboxPending).isNotNull();
         assertThat(outboxPoison).isNotNull();
         assertThat(redisCircuitOpen).isNotNull();
-        assertThat(outboxPending.count()).isEqualTo(0.0);
-        assertThat(outboxPoison.count()).isEqualTo(0.0);
         assertThat(redisCircuitOpen.count()).isEqualTo(0.0);
     }
 
@@ -49,11 +51,11 @@ class MetricsConfigTest {
     }
 
     @Test
-    void prometheusScrapeSurface_allNineTimersAndThreeConfigCountersPresent() {
+    void prometheusScrapeSurface_allNineTimersAndConfigMetricsPresent() {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         MetricsConfig config = new MetricsConfig();
         config.histogramCustomizer().customize(registry);
-        config.placeholderMetrics().bindTo(registry);
+        config.outboxGauges(mock(DocumentOperationRepository.class)).bindTo(registry);
 
         for (String name : new String[]{
                 "lockAcquisition", "loadDocument", "loadInterveningOps",
@@ -73,11 +75,10 @@ class MetricsConfigTest {
                     .contains(name + "_seconds{quantile=\"0.95\"");
         }
 
-        for (String name : new String[]{"outbox_pending_total", "outbox_poison_total", "redis_circuit_open_total"}) {
-            assertThat(scrape)
-                    .as(name + " must appear in the Prometheus scrape")
-                    .contains(name);
-        }
+        // outbox metrics are now gauges (no _total suffix)
+        assertThat(scrape).as("outbox.pending gauge must appear").contains("outbox_pending");
+        assertThat(scrape).as("outbox.poison gauge must appear").contains("outbox_poison");
+        assertThat(scrape).as("redis.circuit_open counter must appear").contains("redis_circuit_open_total");
     }
 
     @Test

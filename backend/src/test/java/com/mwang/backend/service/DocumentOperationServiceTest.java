@@ -9,7 +9,6 @@ import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.domain.model.DocumentNode;
 import com.mwang.backend.domain.model.DocumentTree;
-import com.mwang.backend.kafka.AcceptedOperationDomainEvent;
 import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
@@ -30,7 +29,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 
 import java.time.Instant;
@@ -59,7 +57,6 @@ class DocumentOperationServiceTest {
     @Mock private DocumentAuthorizationService authorizationService;
     @Mock private OperationTransformer transformer;
     @Mock private ObjectMapper objectMapper;
-    @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private EntityManager entityManager;
     @Spy private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
@@ -430,7 +427,6 @@ class DocumentOperationServiceTest {
                 mock(DocumentAuthorizationService.class),
                 mock(OperationTransformer.class),
                 mock(ObjectMapper.class),
-                mock(ApplicationEventPublisher.class),
                 mock(EntityManager.class),
                 prometheusRegistry);
 
