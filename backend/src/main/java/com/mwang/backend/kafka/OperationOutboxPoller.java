@@ -15,7 +15,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -59,19 +62,27 @@ public class OperationOutboxPoller {
     @Transactional
     public void poll() {
         List<DocumentOperation> batch = repository.claimBatch(Instant.now(), batchSize);
+        Set<UUID> blockedDocuments = new HashSet<>();
         for (DocumentOperation op : batch) {
-            processRow(op);
+            UUID docId = op.getDocument().getId();
+            if (blockedDocuments.contains(docId)) {
+                continue;
+            }
+            if (!processRow(op)) {
+                blockedDocuments.add(docId);
+            }
         }
     }
 
-    private void processRow(DocumentOperation op) {
+    // Returns true on success, false on any failure (so poll() can block later ops for the same document).
+    private boolean processRow(DocumentOperation op) {
         String payload;
         try {
             payload = serialize(op);
         } catch (JsonProcessingException e) {
             log.error("[OUTBOX] Serialization failed: id={} operationId={}", op.getId(), op.getOperationId(), e);
             recordFailureOrPoison(op, e.getMessage());
-            return;
+            return false;
         }
 
         String key = op.getDocument().getId().toString();
@@ -81,14 +92,18 @@ public class OperationOutboxPoller {
             repository.markPublished(op.getId(), Instant.now());
             log.debug("[OUTBOX] Published: operationId={} documentId={} serverVersion={}",
                     op.getOperationId(), op.getDocument().getId(), op.getServerVersion());
+            return true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             recordFailureOrPoison(op, e.getMessage());
+            return false;
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             recordFailureOrPoison(op, cause.getMessage());
+            return false;
         } catch (Exception e) {
             recordFailureOrPoison(op, e.getMessage());
+            return false;
         } finally {
             publishKafkaTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
         }
