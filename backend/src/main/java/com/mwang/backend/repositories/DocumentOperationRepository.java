@@ -49,6 +49,7 @@ public interface DocumentOperationRepository extends JpaRepository<DocumentOpera
                   AND blocker.server_version < o.server_version
                   AND blocker.next_attempt_at > :now
               )
+              AND pg_try_advisory_xact_lock(hashtext(o.document_id::text)::bigint)
             ORDER BY o.next_attempt_at ASC NULLS FIRST, o.server_version ASC
             LIMIT :limit
             FOR UPDATE OF o SKIP LOCKED
