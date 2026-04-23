@@ -91,7 +91,7 @@ class OperationOutboxPollerTest {
 
         verify(repo).markPublished(eq(op.getId()), any(Instant.class));
         verify(repo, never()).recordFailure(any(), anyInt(), any(), any());
-        verify(repo, never()).markPoison(any(), any());
+        verify(repo, never()).markPoison(any(), any(), anyInt(), any());
     }
 
     @Test
@@ -118,7 +118,7 @@ class OperationOutboxPollerTest {
 
         verify(repo).recordFailure(eq(op.getId()), eq(1), contains("broker down"), any(Instant.class));
         verify(repo, never()).markPublished(any(), any());
-        verify(repo, never()).markPoison(any(), any());
+        verify(repo, never()).markPoison(any(), any(), anyInt(), any());
     }
 
     @Test
@@ -131,7 +131,7 @@ class OperationOutboxPollerTest {
 
         poller.poll();
 
-        verify(repo).markPoison(eq(op.getId()), any(Instant.class));
+        verify(repo).markPoison(eq(op.getId()), any(Instant.class), eq(10), contains("still down"));
         verify(repo, never()).markPublished(any(), any());
         verify(repo, never()).recordFailure(any(), anyInt(), any(), any());
     }
