@@ -38,7 +38,7 @@ public interface DocumentOperationRepository extends JpaRepository<DocumentOpera
 
     @Query(value = """
             WITH doc_candidates AS (
-              SELECT DISTINCT o.document_id
+              SELECT o.document_id
               FROM document_operations o
               WHERE o.published_to_kafka_at IS NULL
                 AND o.kafka_poison_at IS NULL
@@ -51,6 +51,8 @@ public interface DocumentOperationRepository extends JpaRepository<DocumentOpera
                     AND blocker.server_version < o.server_version
                     AND blocker.next_attempt_at > :now
                 )
+              GROUP BY o.document_id
+              ORDER BY MIN(o.next_attempt_at) ASC NULLS FIRST, MIN(o.server_version) ASC
               LIMIT :limit
             ),
             locked_docs AS (
