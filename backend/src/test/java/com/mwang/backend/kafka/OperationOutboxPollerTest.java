@@ -55,12 +55,16 @@ class OperationOutboxPollerTest {
     }
 
     private DocumentOperation buildOp(int attempts) {
+        return buildOp(attempts, documentId);
+    }
+
+    private DocumentOperation buildOp(int attempts, UUID docId) {
         Document doc = mock(Document.class);
-        when(doc.getId()).thenReturn(documentId);
+        when(doc.getId()).thenReturn(docId);
         User actor = mock(User.class);
         when(actor.getId()).thenReturn(actorId);
 
-        DocumentOperation op = DocumentOperation.builder()
+        return DocumentOperation.builder()
                 .id(UUID.randomUUID())
                 .document(doc)
                 .actor(actor)
@@ -72,7 +76,6 @@ class OperationOutboxPollerTest {
                 .payload("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}")
                 .kafkaPublishAttempts(attempts)
                 .build();
-        return op;
     }
 
     @Test
@@ -137,9 +140,10 @@ class OperationOutboxPollerTest {
     }
 
     @Test
-    void poll_oneFailureDoesNotPreventOtherRowsFromBeingPublished() {
-        DocumentOperation good = buildOp(0);
-        DocumentOperation bad = buildOp(0);
+    void poll_failureForOneDocumentDoesNotBlockDifferentDocument() {
+        UUID otherDocId = UUID.randomUUID();
+        DocumentOperation bad = buildOp(0, documentId);
+        DocumentOperation good = buildOp(0, otherDocId);
         when(repo.claimBatch(any(), anyInt())).thenReturn(List.of(bad, good));
 
         CompletableFuture<SendResult<String, String>> failed = new CompletableFuture<>();
@@ -151,6 +155,24 @@ class OperationOutboxPollerTest {
 
         verify(repo).markPublished(eq(good.getId()), any());
         verify(repo).recordFailure(eq(bad.getId()), anyInt(), any(), any());
+    }
+
+    @Test
+    void poll_withinSameDocument_failureBlocksLaterOpInSameBatch() {
+        DocumentOperation first = buildOp(0, documentId);
+        DocumentOperation second = buildOp(0, documentId);
+        when(repo.claimBatch(any(), anyInt())).thenReturn(List.of(first, second));
+
+        CompletableFuture<SendResult<String, String>> failed = new CompletableFuture<>();
+        failed.completeExceptionally(new RuntimeException("broker down"));
+        when(kafkaTemplate.send(any(), any(), any())).thenReturn(failed);
+
+        poller.poll();
+
+        verify(repo).recordFailure(eq(first.getId()), anyInt(), any(), any());
+        verify(repo, never()).markPublished(eq(second.getId()), any());
+        verify(repo, never()).recordFailure(eq(second.getId()), anyInt(), any(), any());
+        verify(repo, never()).markPoison(eq(second.getId()), any(), anyInt(), any());
     }
 
     @Test
