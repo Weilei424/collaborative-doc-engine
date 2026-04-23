@@ -37,7 +37,29 @@ public interface DocumentOperationRepository extends JpaRepository<DocumentOpera
             Pageable pageable);
 
     @Query(value = """
+            WITH doc_candidates AS (
+              SELECT DISTINCT o.document_id
+              FROM document_operations o
+              WHERE o.published_to_kafka_at IS NULL
+                AND o.kafka_poison_at IS NULL
+                AND (o.next_attempt_at IS NULL OR o.next_attempt_at <= :now)
+                AND NOT EXISTS (
+                  SELECT 1 FROM document_operations blocker
+                  WHERE blocker.document_id = o.document_id
+                    AND blocker.published_to_kafka_at IS NULL
+                    AND blocker.kafka_poison_at IS NULL
+                    AND blocker.server_version < o.server_version
+                    AND blocker.next_attempt_at > :now
+                )
+              LIMIT :limit
+            ),
+            locked_docs AS (
+              SELECT document_id
+              FROM doc_candidates
+              WHERE pg_try_advisory_xact_lock(hashtext(document_id::text)::bigint)
+            )
             SELECT o.* FROM document_operations o
+            JOIN locked_docs ld ON ld.document_id = o.document_id
             WHERE o.published_to_kafka_at IS NULL
               AND o.kafka_poison_at IS NULL
               AND (o.next_attempt_at IS NULL OR o.next_attempt_at <= :now)
@@ -49,7 +71,6 @@ public interface DocumentOperationRepository extends JpaRepository<DocumentOpera
                   AND blocker.server_version < o.server_version
                   AND blocker.next_attempt_at > :now
               )
-              AND pg_try_advisory_xact_lock(hashtext(o.document_id::text)::bigint)
             ORDER BY o.next_attempt_at ASC NULLS FIRST, o.server_version ASC
             LIMIT :limit
             FOR UPDATE OF o SKIP LOCKED
