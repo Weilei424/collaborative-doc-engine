@@ -98,7 +98,7 @@ public class OperationOutboxPoller {
         int newAttempts = op.getKafkaPublishAttempts() + 1;
         Instant now = Instant.now();
         if (newAttempts >= maxAttempts) {
-            repository.markPoison(op.getId(), now);
+            repository.markPoison(op.getId(), now, newAttempts, error);
             log.error("[OUTBOX] Poisoned after {} attempts: operationId={} documentId={} error={}",
                     newAttempts, op.getOperationId(), op.getDocument().getId(), error);
         } else {
