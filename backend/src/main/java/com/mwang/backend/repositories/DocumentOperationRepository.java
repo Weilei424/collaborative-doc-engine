@@ -37,13 +37,21 @@ public interface DocumentOperationRepository extends JpaRepository<DocumentOpera
             Pageable pageable);
 
     @Query(value = """
-            SELECT * FROM document_operations
-            WHERE published_to_kafka_at IS NULL
-              AND kafka_poison_at IS NULL
-              AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
-            ORDER BY next_attempt_at ASC NULLS FIRST, server_version ASC
+            SELECT o.* FROM document_operations o
+            WHERE o.published_to_kafka_at IS NULL
+              AND o.kafka_poison_at IS NULL
+              AND (o.next_attempt_at IS NULL OR o.next_attempt_at <= :now)
+              AND NOT EXISTS (
+                SELECT 1 FROM document_operations blocker
+                WHERE blocker.document_id = o.document_id
+                  AND blocker.published_to_kafka_at IS NULL
+                  AND blocker.kafka_poison_at IS NULL
+                  AND blocker.server_version < o.server_version
+                  AND blocker.next_attempt_at > :now
+              )
+            ORDER BY o.next_attempt_at ASC NULLS FIRST, o.server_version ASC
             LIMIT :limit
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF o SKIP LOCKED
             """, nativeQuery = true)
     List<DocumentOperation> claimBatch(@Param("now") Instant now, @Param("limit") int limit);
 
