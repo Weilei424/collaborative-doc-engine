@@ -6,7 +6,6 @@ import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentVisibility;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.domain.DocumentOperationType;
-import com.mwang.backend.kafka.KafkaOperationEventPublisher;
 import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.repositories.UserRepository;
@@ -41,9 +40,6 @@ class DocumentOperationConcurrencyTest extends AbstractIntegrationTest {
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
-
-    @MockitoBean
-    private KafkaOperationEventPublisher kafkaOperationEventPublisher;
 
     @Autowired
     private DocumentOperationService operationService;
