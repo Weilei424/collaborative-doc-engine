@@ -49,7 +49,6 @@ public interface DocumentOperationRepository extends JpaRepository<DocumentOpera
                     AND blocker.published_to_kafka_at IS NULL
                     AND blocker.kafka_poison_at IS NULL
                     AND blocker.server_version < o.server_version
-                    AND blocker.next_attempt_at > :now
                 )
               GROUP BY o.document_id
               ORDER BY MIN(COALESCE(o.next_attempt_at, '-infinity'::timestamptz)) ASC, MIN(o.server_version) ASC
@@ -71,9 +70,8 @@ public interface DocumentOperationRepository extends JpaRepository<DocumentOpera
                   AND blocker.published_to_kafka_at IS NULL
                   AND blocker.kafka_poison_at IS NULL
                   AND blocker.server_version < o.server_version
-                  AND blocker.next_attempt_at > :now
               )
-            ORDER BY o.server_version ASC
+            ORDER BY o.next_attempt_at ASC NULLS FIRST, o.server_version ASC
             LIMIT :limit
             FOR UPDATE OF o SKIP LOCKED
             """, nativeQuery = true)
