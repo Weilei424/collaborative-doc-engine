@@ -118,7 +118,7 @@ class OutboxChaosTest extends AbstractIntegrationTest {
         // No poison rows
         assertThat(operationRepo.countPoison()).isZero();
 
-        // Drain Kafka and verify exactly-once, in-order delivery
+        // Drain Kafka and verify at-least-once, in-order delivery (no duplicates in the happy path)
         UUID docId = doc.getId();
         List<KafkaAcceptedOperationEvent> events = drainEventsForDocument(docId, 10);
 
