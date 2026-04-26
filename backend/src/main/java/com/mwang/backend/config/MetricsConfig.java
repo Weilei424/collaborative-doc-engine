@@ -1,6 +1,7 @@
 package com.mwang.backend.config;
 
 import com.mwang.backend.repositories.DocumentOperationRepository;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -46,7 +47,13 @@ public class MetricsConfig {
             Gauge.builder("outbox.poison", repo, DocumentOperationRepository::countPoison)
                  .description("Poison outbox rows requiring operator attention")
                  .register(registry);
-            registry.counter("redis.circuit_open");
         };
+    }
+
+    @Bean
+    Counter redisCircuitOpenCounter(MeterRegistry registry) {
+        return Counter.builder("redis.circuit_open")
+                .description("Publish calls silenced by open Redis circuit breaker")
+                .register(registry);
     }
 }
