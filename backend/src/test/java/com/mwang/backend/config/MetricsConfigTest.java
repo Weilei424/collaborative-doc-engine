@@ -17,20 +17,25 @@ import static org.mockito.Mockito.mock;
 class MetricsConfigTest {
 
     @Test
-    void outboxGauges_registersGaugesAndCircuitBreakerCounter() {
+    void outboxGauges_registersGauges() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         DocumentOperationRepository repo = mock(DocumentOperationRepository.class);
 
         new MetricsConfig().outboxGauges(repo).bindTo(registry);
 
-        Gauge outboxPending = registry.find("outbox.pending").gauge();
-        Gauge outboxPoison = registry.find("outbox.poison").gauge();
-        Counter redisCircuitOpen = registry.find("redis.circuit_open").counter();
+        assertThat(registry.find("outbox.pending").gauge()).isNotNull();
+        assertThat(registry.find("outbox.poison").gauge()).isNotNull();
+    }
 
-        assertThat(outboxPending).isNotNull();
-        assertThat(outboxPoison).isNotNull();
-        assertThat(redisCircuitOpen).isNotNull();
-        assertThat(redisCircuitOpen.count()).isEqualTo(0.0);
+    @Test
+    void redisCircuitOpenCounter_registersCounter() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+        Counter counter = new MetricsConfig().redisCircuitOpenCounter(registry);
+
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isEqualTo(0.0);
+        assertThat(registry.find("redis.circuit_open").counter()).isNotNull();
     }
 
     @Test
@@ -56,6 +61,7 @@ class MetricsConfigTest {
         MetricsConfig config = new MetricsConfig();
         config.histogramCustomizer().customize(registry);
         config.outboxGauges(mock(DocumentOperationRepository.class)).bindTo(registry);
+        config.redisCircuitOpenCounter(registry);
 
         for (String name : new String[]{
                 "lockAcquisition", "loadDocument", "loadInterveningOps",
