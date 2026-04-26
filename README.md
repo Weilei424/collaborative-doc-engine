@@ -52,3 +52,23 @@ kafka-consumer-groups.sh \
   --to-earliest \
   --execute
 ```
+
+## Fault Tolerance
+
+### Redis Degradation
+
+Redis is used for low-latency cross-instance fanout of accepted operations and presence events. It is **best-effort** — a Redis outage does not affect the hot path.
+
+**When Redis is down:**
+- `operations.submit` continues to succeed. The submitting client's editor receives the accepted operation via local STOMP fanout (same-instance).
+- Cross-instance clients stop receiving real-time updates during the outage.
+- The `redis.circuit_open` counter in `/actuator/prometheus` increments for each silenced publish call.
+- The readiness probe (`/actuator/health/readiness`) stays `UP` — Redis health is advisory only.
+
+**Client recovery:** Clients on other instances detect version gaps and call `GET /api/documents/{id}/operations?sinceVersion={v}` to catch up. No manual intervention or client reload required.
+
+**Automatic recovery:** Lettuce reconnects automatically with `autoReconnect=true`. Once Redis is back, the `RedisMessageListenerContainer` rebinds subscriptions (within 5s recovery interval) and normal cross-instance fanout resumes. No server restart needed.
+
+**Operator signals:**
+- `redis.circuit_open` counter spiking in Prometheus indicates an active outage.
+- `/actuator/health` (requires authentication) shows Redis health as an advisory indicator.
