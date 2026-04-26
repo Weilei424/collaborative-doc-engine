@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.CollaborationSessionSnapshot;
 import com.mwang.backend.web.model.PresenceEventResponse;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -18,16 +21,22 @@ public class RedisTemplateCollaborationEventPublisher implements RedisCollaborat
     private final ObjectMapper objectMapper;
     private final String collaborationInstanceId;
     private final Timer publishRedisTimer;
+    private final CircuitBreaker circuitBreaker;
+    private final Counter circuitOpenCounter;
 
     public RedisTemplateCollaborationEventPublisher(
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper,
             String collaborationInstanceId,
-            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+            io.micrometer.core.instrument.MeterRegistry meterRegistry,
+            CircuitBreaker redisPublishCircuitBreaker,
+            Counter redisCircuitOpenCounter) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.collaborationInstanceId = collaborationInstanceId;
         this.publishRedisTimer = Timer.builder("publishRedis").register(meterRegistry);
+        this.circuitBreaker = redisPublishCircuitBreaker;
+        this.circuitOpenCounter = redisCircuitOpenCounter;
     }
 
     @Override
@@ -68,23 +77,34 @@ public class RedisTemplateCollaborationEventPublisher implements RedisCollaborat
 
     @Override
     public void publishAcceptedOperation(UUID documentId, AcceptedOperationResponse response) {
-        publishRedisTimer.record(() -> {
-            try {
-                redisTemplate.convertAndSend(
-                        RedisCollaborationChannels.documentOperations(documentId),
-                        objectMapper.writeValueAsString(
-                                new RedisAcceptedOperationEvent(collaborationInstanceId, response)));
-            } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
-                throw new IllegalStateException("Failed to publish accepted operation event", exception);
-            }
-        });
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(
+                    new RedisAcceptedOperationEvent(collaborationInstanceId, response));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize accepted operation event", e);
+        }
+        String channel = RedisCollaborationChannels.documentOperations(documentId);
+        publishRedisTimer.record(() -> circuitBreakingPublish(channel, json));
     }
 
     private void publish(RedisCollaborationEvent event) {
+        String json;
         try {
-            redisTemplate.convertAndSend(RedisCollaborationChannels.EVENTS, objectMapper.writeValueAsString(event));
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Failed to publish collaboration event", exception);
+            json = objectMapper.writeValueAsString(event);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize collaboration event", e);
+        }
+        circuitBreakingPublish(RedisCollaborationChannels.EVENTS, json);
+    }
+
+    private void circuitBreakingPublish(String channel, String json) {
+        try {
+            circuitBreaker.executeRunnable(() -> redisTemplate.convertAndSend(channel, json));
+        } catch (CallNotPermittedException e) {
+            circuitOpenCounter.increment();
+        } catch (Exception ignored) {
+            // Redis failure already recorded by circuit breaker; hot path must not fail
         }
     }
 }
