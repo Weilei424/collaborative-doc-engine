@@ -32,8 +32,16 @@ class RedisTemplateCollaborationEventPublisherTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        io.micrometer.core.instrument.Counter counter =
+                io.micrometer.core.instrument.Counter.builder("redis.circuit_open").register(registry);
+        io.github.resilience4j.circuitbreaker.CircuitBreaker closedBreaker =
+                io.github.resilience4j.circuitbreaker.CircuitBreaker.of(
+                        "test",
+                        io.github.resilience4j.circuitbreaker.CircuitBreakerConfig.ofDefaults());
         publisher = new RedisTemplateCollaborationEventPublisher(
-                redisTemplate, objectMapper, INSTANCE_ID, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+                redisTemplate, objectMapper, INSTANCE_ID, registry, closedBreaker, counter);
     }
 
     @Test
@@ -67,8 +75,15 @@ class RedisTemplateCollaborationEventPublisherTest {
         UUID documentId = UUID.randomUUID();
         io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        io.micrometer.core.instrument.Counter timerCounter =
+                io.micrometer.core.instrument.Counter.builder("redis.circuit_open").register(registry);
+        io.github.resilience4j.circuitbreaker.CircuitBreaker closedBreaker =
+                io.github.resilience4j.circuitbreaker.CircuitBreaker.of(
+                        "timer-test",
+                        io.github.resilience4j.circuitbreaker.CircuitBreakerConfig.ofDefaults());
         RedisTemplateCollaborationEventPublisher pub =
-                new RedisTemplateCollaborationEventPublisher(redisTemplate, objectMapper, INSTANCE_ID, registry);
+                new RedisTemplateCollaborationEventPublisher(
+                        redisTemplate, objectMapper, INSTANCE_ID, registry, closedBreaker, timerCounter);
 
         pub.publishAcceptedOperation(documentId, buildResponse(documentId));
 
