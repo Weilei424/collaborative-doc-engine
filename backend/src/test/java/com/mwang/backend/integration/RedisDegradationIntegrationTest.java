@@ -100,18 +100,18 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
                     .doesNotThrowAnyException();
         }
 
-        // Register subscriber before pausing so we prove pre-existing subscriptions are rebound
+        // Register subscriber before the outage so we prove pre-existing subscriptions are rebound
         String opsChannel = RedisCollaborationChannels.documentOperations(doc.getId());
         CountDownLatch subscriberLatch = new CountDownLatch(1);
         MessageListener testListener = (msg, pattern) -> subscriberLatch.countDown();
         listenerContainer.addMessageListener(testListener, new PatternTopic(opsChannel));
 
-        // Phase 2 — pause Redis
+        // Phase 2 — stop Redis (not pause; stop drops TCP connections and forces a real reconnect)
         DockerClient docker = REDIS.getDockerClient();
-        docker.pauseContainerCmd(REDIS.getContainerId()).exec();
+        docker.stopContainerCmd(REDIS.getContainerId()).withTimeout(0).exec();
 
         try {
-            // Brief wait for Lettuce to detect the disconnection
+            // Lettuce detects the TCP disconnect immediately after the process dies
             Thread.sleep(1500);
 
             // Phase 3 — submit with Redis down: publisher must not throw
@@ -130,11 +130,12 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
             assertThat(readiness.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         } finally {
-            docker.unpauseContainerCmd(REDIS.getContainerId()).exec();
+            docker.startContainerCmd(REDIS.getContainerId()).exec();
         }
 
         // Phase 5 — wait past the breaker open duration (3 s) and listener recovery interval (0.5 s)
-        // so the breaker can transition to HALF_OPEN and the listener container can rebind
+        // so Redis is accepting connections, the breaker can transition to HALF_OPEN, and the
+        // listener container can rebind its subscriptions after the real reconnect
         Thread.sleep(4000);
 
         AcceptedOperationResponse probeResponse = operationService.submitOperation(doc.getId(),
