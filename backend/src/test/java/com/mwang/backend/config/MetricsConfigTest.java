@@ -39,6 +39,17 @@ class MetricsConfigTest {
     }
 
     @Test
+    void redisPublishFailuresCounter_registersCounter() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+        Counter counter = new MetricsConfig().redisPublishFailuresCounter(registry);
+
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isEqualTo(0.0);
+        assertThat(registry.find("redis.publish_failures").counter()).isNotNull();
+    }
+
+    @Test
     void histogramCustomizer_enablesPercentilesForKnownTimerNames() {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         new MetricsConfig().histogramCustomizer().customize(registry);
@@ -62,6 +73,7 @@ class MetricsConfigTest {
         config.histogramCustomizer().customize(registry);
         config.outboxGauges(mock(DocumentOperationRepository.class)).bindTo(registry);
         config.redisCircuitOpenCounter(registry);
+        config.redisPublishFailuresCounter(registry);
 
         for (String name : new String[]{
                 "lockAcquisition", "loadDocument", "loadInterveningOps",
@@ -85,6 +97,7 @@ class MetricsConfigTest {
         assertThat(scrape).as("outbox.pending gauge must appear").contains("outbox_pending");
         assertThat(scrape).as("outbox.poison gauge must appear").contains("outbox_poison");
         assertThat(scrape).as("redis.circuit_open counter must appear").contains("redis_circuit_open_total");
+        assertThat(scrape).as("redis.publish_failures counter must appear").contains("redis_publish_failures_total");
     }
 
     @Test
