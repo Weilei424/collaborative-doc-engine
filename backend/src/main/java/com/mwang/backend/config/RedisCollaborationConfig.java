@@ -3,6 +3,7 @@ package com.mwang.backend.config;
 import com.mwang.backend.collaboration.RedisCollaborationChannels;
 import com.mwang.backend.collaboration.RedisCollaborationEventSubscriber;
 import io.lettuce.core.ClientOptions;
+import io.lettuce.core.TimeoutOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.data.redis.LettuceClientConfigurationBuilderCustomizer;
@@ -13,6 +14,7 @@ import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.PatternTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 
+import java.time.Duration;
 import java.util.UUID;
 
 @Configuration
@@ -24,11 +26,13 @@ public class RedisCollaborationConfig {
     }
 
     @Bean
-    LettuceClientConfigurationBuilderCustomizer lettuceDisconnectedBehavior() {
+    LettuceClientConfigurationBuilderCustomizer lettuceDisconnectedBehavior(
+            @Value("${collaboration.redis.command-timeout-ms:2000}") long commandTimeoutMs) {
         return builder -> builder.clientOptions(
                 ClientOptions.builder()
                         .autoReconnect(true)
                         .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
+                        .timeoutOptions(TimeoutOptions.enabled(Duration.ofMillis(commandTimeoutMs)))
                         .build());
     }
 
