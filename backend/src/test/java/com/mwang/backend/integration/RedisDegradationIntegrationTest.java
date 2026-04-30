@@ -45,7 +45,8 @@ import static org.mockito.Mockito.when;
         "collaboration.redis.circuit-breaker.failure-rate-threshold=40",
         "collaboration.redis.circuit-breaker.wait-duration-in-open-ms=3000",
         "collaboration.outbox.poll-interval-ms=60000",
-        "collaboration.redis.listener.recovery-interval-ms=500"
+        "collaboration.redis.listener.recovery-interval-ms=500",
+        "collaboration.redis.listener.enabled=true"
 })
 class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
 
