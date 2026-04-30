@@ -3,6 +3,7 @@ package com.mwang.backend.integration;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.DockerClient;
+import com.mwang.backend.collaboration.RedisCollaborationChannels;
 import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentOperationType;
@@ -18,6 +19,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.data.redis.connection.MessageListener;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.listener.PatternTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
@@ -25,6 +30,8 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -37,7 +44,8 @@ import static org.mockito.Mockito.when;
         "collaboration.redis.circuit-breaker.sliding-window-size=5",
         "collaboration.redis.circuit-breaker.failure-rate-threshold=40",
         "collaboration.redis.circuit-breaker.wait-duration-in-open-ms=3000",
-        "collaboration.outbox.poll-interval-ms=60000"
+        "collaboration.outbox.poll-interval-ms=60000",
+        "collaboration.redis.listener.recovery-interval-ms=500"
 })
 class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
 
@@ -61,6 +69,12 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     TestRestTemplate restTemplate;
+
+    @Autowired
+    RedisMessageListenerContainer listenerContainer;
+
+    @Autowired
+    StringRedisTemplate stringRedisTemplate;
 
     @Test
     void operationsSucceedAndReadinessUnchangedDuringRedisOutage() throws Exception {
@@ -116,8 +130,23 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
             docker.unpauseContainerCmd(REDIS.getContainerId()).exec();
         }
 
-        // Phase 5 — after Redis recovers, publisher still works without throwing
+        // Phase 5 — after Redis recovers, verify listener container rebound its subscription
         Thread.sleep(2000);
+
+        String opsChannel = RedisCollaborationChannels.documentOperations(doc.getId());
+        CountDownLatch subscriberLatch = new CountDownLatch(1);
+        MessageListener testListener = (msg, pattern) -> subscriberLatch.countDown();
+        listenerContainer.addMessageListener(testListener, new PatternTopic(opsChannel));
+        try {
+            stringRedisTemplate.convertAndSend(opsChannel, "probe");
+            assertThat(subscriberLatch.await(8, TimeUnit.SECONDS))
+                    .as("RedisMessageListenerContainer must rebind and receive messages after recovery")
+                    .isTrue();
+        } finally {
+            listenerContainer.removeMessageListener(testListener);
+        }
+
+        // Phase 5 (continued) — publisher still works without throwing
         for (int i = 9; i < 12; i++) {
             final int version = i;
             AcceptedOperationResponse response = operationService.submitOperation(doc.getId(),
