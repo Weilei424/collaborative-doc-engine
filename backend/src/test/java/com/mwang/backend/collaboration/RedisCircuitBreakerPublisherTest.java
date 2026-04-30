@@ -34,6 +34,7 @@ class RedisCircuitBreakerPublisherTest {
 
     private CircuitBreaker circuitBreaker;
     private Counter counter;
+    private Counter publishFailuresCounter;
     private RedisTemplateCollaborationEventPublisher publisher;
 
     private static final UUID DOC_ID = UUID.randomUUID();
@@ -42,10 +43,11 @@ class RedisCircuitBreakerPublisherTest {
     void setUp() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         counter = Counter.builder("redis.circuit_open").register(registry);
+        publishFailuresCounter = Counter.builder("redis.publish_failures").register(registry);
         circuitBreaker = CircuitBreaker.of("test", CircuitBreakerConfig.ofDefaults());
         publisher = new RedisTemplateCollaborationEventPublisher(
                 redisTemplate, new ObjectMapper().findAndRegisterModules(),
-                "test-instance", registry, circuitBreaker, counter);
+                "test-instance", registry, circuitBreaker, counter, publishFailuresCounter);
     }
 
     @Test
@@ -106,17 +108,19 @@ class RedisCircuitBreakerPublisherTest {
 
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(1);
         assertThat(counter.count()).isEqualTo(0.0);
+        assertThat(publishFailuresCounter.count()).isEqualTo(1.0);
     }
 
     @Test
-    void publishAcceptedOperation_counterDoesNotIncrementOnRedisFailure() {
+    void publishAcceptedOperation_circuitOpenCounterDoesNotIncrementOnRedisFailure() {
         doThrow(new RedisConnectionFailureException("timeout"))
                 .when(redisTemplate).convertAndSend(anyString(), anyString());
 
         publisher.publishAcceptedOperation(DOC_ID, buildResponse());
 
-        // counter only increments for CallNotPermittedException (open breaker), not raw failures
+        // circuit_open only increments for CallNotPermittedException; raw failures go to publish_failures
         assertThat(counter.count()).isEqualTo(0.0);
+        assertThat(publishFailuresCounter.count()).isEqualTo(1.0);
     }
 
     private AcceptedOperationResponse buildResponse() {
