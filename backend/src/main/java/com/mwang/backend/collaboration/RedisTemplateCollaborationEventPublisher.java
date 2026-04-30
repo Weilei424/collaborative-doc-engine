@@ -23,6 +23,7 @@ public class RedisTemplateCollaborationEventPublisher implements RedisCollaborat
     private final Timer publishRedisTimer;
     private final CircuitBreaker circuitBreaker;
     private final Counter circuitOpenCounter;
+    private final Counter publishFailuresCounter;
 
     public RedisTemplateCollaborationEventPublisher(
             StringRedisTemplate redisTemplate,
@@ -30,13 +31,15 @@ public class RedisTemplateCollaborationEventPublisher implements RedisCollaborat
             String collaborationInstanceId,
             io.micrometer.core.instrument.MeterRegistry meterRegistry,
             CircuitBreaker redisPublishCircuitBreaker,
-            Counter redisCircuitOpenCounter) {
+            Counter redisCircuitOpenCounter,
+            Counter redisPublishFailuresCounter) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.collaborationInstanceId = collaborationInstanceId;
         this.publishRedisTimer = Timer.builder("publishRedis").register(meterRegistry);
         this.circuitBreaker = redisPublishCircuitBreaker;
         this.circuitOpenCounter = redisCircuitOpenCounter;
+        this.publishFailuresCounter = redisPublishFailuresCounter;
     }
 
     @Override
@@ -104,6 +107,7 @@ public class RedisTemplateCollaborationEventPublisher implements RedisCollaborat
         } catch (CallNotPermittedException e) {
             circuitOpenCounter.increment();
         } catch (Exception ignored) {
+            publishFailuresCounter.increment();
             // Redis failure already recorded by circuit breaker; hot path must not fail
         }
     }
