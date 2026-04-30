@@ -56,4 +56,11 @@ public class MetricsConfig {
                 .description("Publish calls silenced by open Redis circuit breaker")
                 .register(registry);
     }
+
+    @Bean
+    Counter redisPublishFailuresCounter(MeterRegistry registry) {
+        return Counter.builder("redis.publish_failures")
+                .description("Raw Redis publish failures recorded by the circuit breaker")
+                .register(registry);
+    }
 }
