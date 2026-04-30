@@ -20,7 +20,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.data.redis.connection.MessageListener;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.PatternTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.http.HttpStatus;
@@ -42,6 +41,7 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "collaboration.redis.circuit-breaker.sliding-window-size=5",
+        "collaboration.redis.circuit-breaker.minimum-number-of-calls=5",
         "collaboration.redis.circuit-breaker.failure-rate-threshold=40",
         "collaboration.redis.circuit-breaker.wait-duration-in-open-ms=3000",
         "collaboration.outbox.poll-interval-ms=60000",
@@ -73,9 +73,6 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     RedisMessageListenerContainer listenerContainer;
 
-    @Autowired
-    StringRedisTemplate stringRedisTemplate;
-
     @Test
     void operationsSucceedAndReadinessUnchangedDuringRedisOutage() throws Exception {
         User user = userRepo.save(User.builder()
@@ -102,6 +99,12 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
             assertThatCode(() -> redisPublisher.publishAcceptedOperation(doc.getId(), response))
                     .doesNotThrowAnyException();
         }
+
+        // Register subscriber before pausing so we prove pre-existing subscriptions are rebound
+        String opsChannel = RedisCollaborationChannels.documentOperations(doc.getId());
+        CountDownLatch subscriberLatch = new CountDownLatch(1);
+        MessageListener testListener = (msg, pattern) -> subscriberLatch.countDown();
+        listenerContainer.addMessageListener(testListener, new PatternTopic(opsChannel));
 
         // Phase 2 — pause Redis
         DockerClient docker = REDIS.getDockerClient();
@@ -130,24 +133,23 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
             docker.unpauseContainerCmd(REDIS.getContainerId()).exec();
         }
 
-        // Phase 5 — after Redis recovers, verify listener container rebound its subscription
-        Thread.sleep(2000);
+        // Phase 5 — wait past the breaker open duration (3 s) and listener recovery interval (0.5 s)
+        // so the breaker can transition to HALF_OPEN and the listener container can rebind
+        Thread.sleep(4000);
 
-        String opsChannel = RedisCollaborationChannels.documentOperations(doc.getId());
-        CountDownLatch subscriberLatch = new CountDownLatch(1);
-        MessageListener testListener = (msg, pattern) -> subscriberLatch.countDown();
-        listenerContainer.addMessageListener(testListener, new PatternTopic(opsChannel));
-        try {
-            stringRedisTemplate.convertAndSend(opsChannel, "probe");
-            assertThat(subscriberLatch.await(8, TimeUnit.SECONDS))
-                    .as("RedisMessageListenerContainer must rebind and receive messages after recovery")
-                    .isTrue();
-        } finally {
-            listenerContainer.removeMessageListener(testListener);
-        }
+        AcceptedOperationResponse probeResponse = operationService.submitOperation(doc.getId(),
+                new SubmitOperationRequest(UUID.randomUUID(), 9L, DocumentOperationType.INSERT_TEXT, payload),
+                accessor);
+        redisPublisher.publishAcceptedOperation(doc.getId(), probeResponse);
 
-        // Phase 5 (continued) — publisher still works without throwing
-        for (int i = 9; i < 12; i++) {
+        assertThat(subscriberLatch.await(8, TimeUnit.SECONDS))
+                .as("pre-existing subscription must rebind and receive published events after Redis and breaker recover")
+                .isTrue();
+
+        listenerContainer.removeMessageListener(testListener);
+
+        // Phase 5 (continued) — publisher continues to work without throwing
+        for (int i = 10; i < 12; i++) {
             final int version = i;
             AcceptedOperationResponse response = operationService.submitOperation(doc.getId(),
                     new SubmitOperationRequest(UUID.randomUUID(), (long) version, DocumentOperationType.INSERT_TEXT, payload),
