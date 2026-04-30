@@ -16,11 +16,13 @@ public class RedisCircuitBreakerConfig {
     CircuitBreaker redisPublishCircuitBreaker(
             @Value("${collaboration.redis.circuit-breaker.failure-rate-threshold:50}") float failureRate,
             @Value("${collaboration.redis.circuit-breaker.sliding-window-size:20}") int windowSize,
+            @Value("${collaboration.redis.circuit-breaker.minimum-number-of-calls:20}") int minimumCalls,
             @Value("${collaboration.redis.circuit-breaker.permitted-calls-in-half-open:3}") int halfOpenCalls,
             @Value("${collaboration.redis.circuit-breaker.wait-duration-in-open-ms:10000}") long waitMs) {
         CircuitBreakerConfig config = CircuitBreakerConfig.custom()
                 .failureRateThreshold(failureRate)
                 .slidingWindowSize(windowSize)
+                .minimumNumberOfCalls(minimumCalls)
                 .permittedNumberOfCallsInHalfOpenState(halfOpenCalls)
                 .waitDurationInOpenState(Duration.ofMillis(waitMs))
                 .build();
