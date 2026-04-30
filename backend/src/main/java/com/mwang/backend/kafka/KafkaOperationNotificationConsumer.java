@@ -37,12 +37,16 @@ public class KafkaOperationNotificationConsumer {
         KafkaAcceptedOperationEvent event = objectMapper.readValue(message, KafkaAcceptedOperationEvent.class);
 
         String dedupKey = "dedup:op:" + event.operationId();
-        Boolean isNew = redisTemplate.opsForValue()
-                .setIfAbsent(dedupKey, "1", Duration.ofMinutes(5));
-
-        if (Boolean.FALSE.equals(isNew)) {
-            log.debug("[NOTIFY] duplicate op {}, skipping broadcast", event.operationId());
-            return;
+        try {
+            Boolean isNew = redisTemplate.opsForValue()
+                    .setIfAbsent(dedupKey, "1", Duration.ofMinutes(5));
+            if (Boolean.FALSE.equals(isNew)) {
+                log.debug("[NOTIFY] duplicate op {}, skipping broadcast", event.operationId());
+                return;
+            }
+        } catch (Exception e) {
+            // Redis is advisory for dedup — proceed with publish rather than blocking Kafka consumption
+            log.warn("[NOTIFY] Redis dedup unavailable for op {}, broadcasting anyway: {}", event.operationId(), e.getMessage());
         }
 
         collaborationEventPublisher.publishAcceptedOperation(
