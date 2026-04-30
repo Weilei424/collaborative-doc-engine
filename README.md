@@ -62,7 +62,8 @@ Redis is used for low-latency cross-instance fanout of accepted operations and p
 **When Redis is down:**
 - `operations.submit` continues to succeed. The submitting client's editor receives the accepted operation via local STOMP fanout (same-instance).
 - Cross-instance clients stop receiving real-time updates during the outage.
-- The `redis.circuit_open` counter in `/actuator/prometheus` increments for each silenced publish call.
+- The `redis.circuit_open` counter in `/actuator/prometheus` increments each time a publish is silenced because the circuit breaker is already open.
+- The `redis.publish_failures` counter increments for each raw Redis publish failure (these failures drive the circuit breaker's failure-rate window toward tripping).
 - The readiness probe (`/actuator/health/readiness`) stays `UP` — Redis health is advisory only.
 
 **Client recovery:** Clients on other instances detect version gaps and call `GET /api/documents/{id}/operations?sinceVersion={v}` to catch up. No manual intervention or client reload required.
@@ -70,5 +71,5 @@ Redis is used for low-latency cross-instance fanout of accepted operations and p
 **Automatic recovery:** Lettuce reconnects automatically with `autoReconnect=true`. Once Redis is back, the `RedisMessageListenerContainer` rebinds subscriptions (within 5s recovery interval) and normal cross-instance fanout resumes. No server restart needed.
 
 **Operator signals:**
-- `redis.circuit_open` counter spiking in Prometheus indicates an active outage.
+- `redis.publish_failures` counter rising indicates Redis is reachable but failing commands; `redis.circuit_open` spiking means the circuit breaker has tripped and all publishes are being dropped.
 - `/actuator/health` (requires authentication) shows Redis health as an advisory indicator.
