@@ -183,31 +183,31 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             otTransformLoopTimer.record(System.nanoTime() - loopStart, java.util.concurrent.TimeUnit.NANOSECONDS);
         }
 
-        // 8. Apply to document tree (skip for NO_OP)
+        // 8. Apply to document tree; advance cache on every version bump (including NO_OP)
         long currentVersion = document.getCurrentVersion();
         long nextVersion = currentVersion + 1;
-        if (currentType != DocumentOperationType.NO_OP) {
-            long treeStart = System.nanoTime();
-            try {
-                final Document lockedDoc = document; // needed: document is re-assigned above (not effectively-final for lambda)
-                DocumentTree tree = treeCache.get(documentId, currentVersion)
-                        .orElseGet(() -> {
-                            try {
-                                return objectMapper.readValue(lockedDoc.getContent(), DocumentTree.class);
-                            } catch (Exception e) {
-                                throw new IllegalStateException("Failed to deserialize document tree from content", e);
-                            }
-                        });
+        long treeStart = System.nanoTime();
+        try {
+            final Document lockedDoc = document; // needed: document is re-assigned above (not effectively-final for lambda)
+            DocumentTree tree = treeCache.get(documentId, currentVersion)
+                    .orElseGet(() -> {
+                        try {
+                            return objectMapper.readValue(lockedDoc.getContent(), DocumentTree.class);
+                        } catch (Exception e) {
+                            throw new IllegalStateException("Failed to deserialize document tree from content", e);
+                        }
+                    });
+            if (currentType != DocumentOperationType.NO_OP) {
                 JsonNode enrichedPayload = tree.applyOperation(currentType, currentPayload);
                 currentPayload = enrichedPayload;
                 document.setContent(objectMapper.writeValueAsString(tree));
-                treeCache.put(documentId, nextVersion, tree);
-                treeCache.evict(documentId, currentVersion);
-            } catch (Exception e) {
-                throw new InvalidOperationException("Failed to apply operation to document: " + e.getMessage(), e);
-            } finally {
-                treeApplyTimer.record(System.nanoTime() - treeStart, java.util.concurrent.TimeUnit.NANOSECONDS);
             }
+            treeCache.put(documentId, nextVersion, tree);
+            treeCache.evict(documentId, currentVersion);
+        } catch (Exception e) {
+            throw new InvalidOperationException("Failed to apply operation to document: " + e.getMessage(), e);
+        } finally {
+            treeApplyTimer.record(System.nanoTime() - treeStart, java.util.concurrent.TimeUnit.NANOSECONDS);
         }
 
         // 9. Persist accepted operation and updated document
