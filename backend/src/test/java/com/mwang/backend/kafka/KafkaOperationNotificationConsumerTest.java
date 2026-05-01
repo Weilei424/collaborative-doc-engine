@@ -14,6 +14,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.springframework.data.redis.RedisConnectionFailureException;
+
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
@@ -81,6 +83,15 @@ class KafkaOperationNotificationConsumerTest {
                 eq("dedup:op:" + operationId),
                 eq("1"),
                 eq(Duration.ofMinutes(5)));
+    }
+
+    @Test
+    void broadcastsWhenRedisDeduplicationUnavailable() throws Exception {
+        when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+                .thenThrow(new RedisConnectionFailureException("Redis down"));
+
+        assertThatNoException().isThrownBy(() -> consumer.onAcceptedOperation(buildMessage(UUID.randomUUID())));
+        verify(eventPublisher).publishAcceptedOperation(any(UUID.class), any(AcceptedOperationResponse.class));
     }
 
     @Test
