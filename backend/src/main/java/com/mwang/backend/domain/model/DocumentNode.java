@@ -7,7 +7,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Data
 @NoArgsConstructor
@@ -23,5 +25,23 @@ public class DocumentNode {
 
     public boolean isLeaf() {
         return children == null || children.isEmpty();
+    }
+
+    public DocumentNode copy() {
+        List<InlineFormat> formatsCopy = formats == null ? new ArrayList<>() :
+                formats.stream()
+                        .map(f -> new InlineFormat(f.getOffset(), f.getLength(),
+                                new LinkedHashMap<>(f.getAttributes())))
+                        .collect(Collectors.toCollection(ArrayList::new));
+        List<DocumentNode> childrenCopy = children == null ? null :
+                children.stream()
+                        .map(DocumentNode::copy)
+                        .collect(Collectors.toCollection(ArrayList::new));
+        return DocumentNode.builder()
+                .type(type)
+                .text(text)
+                .formats(formatsCopy)
+                .children(childrenCopy)
+                .build();
     }
 }
