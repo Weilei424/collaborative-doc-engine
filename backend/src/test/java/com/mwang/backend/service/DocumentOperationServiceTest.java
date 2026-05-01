@@ -2,6 +2,7 @@ package com.mwang.backend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mwang.backend.collaboration.DocumentTreeCache;
 import com.mwang.backend.collaboration.OperationTransformer;
 import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentOperation;
@@ -58,6 +59,7 @@ class DocumentOperationServiceTest {
     @Mock private OperationTransformer transformer;
     @Mock private ObjectMapper objectMapper;
     @Mock private EntityManager entityManager;
+    @Mock private DocumentTreeCache treeCache;
     @Spy private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @InjectMocks
@@ -418,6 +420,88 @@ class DocumentOperationServiceTest {
     }
 
     @Test
+    void submitOperationPreParsesInterveningOpsBeforeTransformLoop() throws Exception {
+        // Two intervening ops — readTree should be called exactly twice (once per op payload),
+        // and never inside the transform loop itself.
+        JsonNode payload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
+        SimpMessageHeaderAccessor acc = accessorWithSession("sess-1");
+
+        DocumentOperation interveningA = DocumentOperation.builder()
+                .operationId(UUID.randomUUID()).serverVersion(1L)
+                .operationType(DocumentOperationType.INSERT_TEXT)
+                .payload("{\"path\":[0],\"offset\":0,\"text\":\"x\"}")
+                .baseVersion(0L).document(document).actor(actor).build();
+        DocumentOperation interveningB = DocumentOperation.builder()
+                .operationId(UUID.randomUUID()).serverVersion(2L)
+                .operationType(DocumentOperationType.INSERT_TEXT)
+                .payload("{\"path\":[0],\"offset\":1,\"text\":\"y\"}")
+                .baseVersion(1L).document(document).actor(actor).build();
+
+        JsonNode parsedA = realMapper.readTree(interveningA.getPayload());
+        JsonNode parsedB = realMapper.readTree(interveningB.getPayload());
+
+        when(currentUserProvider.requireCurrentUser(acc)).thenReturn(actor);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
+                .thenReturn(Optional.empty());
+        when(documentRepository.findByIdWithPessimisticLock(documentId)).thenReturn(Optional.of(document));
+        when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
+                documentId, 0L)).thenReturn(List.of(interveningA, interveningB));
+        when(objectMapper.readTree(interveningA.getPayload())).thenReturn(parsedA);
+        when(objectMapper.readTree(interveningB.getPayload())).thenReturn(parsedB);
+        // Transform: A shifts offset of incoming; B shifts further
+        when(transformer.transform(eq(DocumentOperationType.INSERT_TEXT), any(),
+                eq(DocumentOperationType.INSERT_TEXT), eq(parsedA))).thenReturn(Optional.of(payload));
+        when(transformer.transform(eq(DocumentOperationType.INSERT_TEXT), any(),
+                eq(DocumentOperationType.INSERT_TEXT), eq(parsedB))).thenReturn(Optional.of(payload));
+        // Tree apply
+        DocumentNode node = DocumentNode.builder().type("paragraph").text("").build();
+        DocumentTree tree = DocumentTree.builder().children(new java.util.ArrayList<>(List.of(node))).build();
+        when(objectMapper.readValue(document.getContent(), DocumentTree.class)).thenReturn(tree);
+        when(objectMapper.writeValueAsString(any())).thenReturn("{\"children\":[]}");
+
+        SubmitOperationRequest request = new SubmitOperationRequest(
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
+        service.submitOperation(documentId, request, acc);
+
+        // readTree called exactly once per intervening op payload — in the pre-parse step
+        verify(objectMapper, times(1)).readTree(interveningA.getPayload());
+        verify(objectMapper, times(1)).readTree(interveningB.getPayload());
+    }
+
+    @Test
+    void submitOperationUsesTreeCacheHitAndSkipsReadValue() throws Exception {
+        // Arrange: treeCache.get() returns a pre-built tree copy — readValue should NOT be called
+        JsonNode payload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
+        SimpMessageHeaderAccessor acc = accessorWithSession("sess-2");
+
+        DocumentNode node = DocumentNode.builder().type("paragraph").text("").build();
+        DocumentTree cachedTree = DocumentTree.builder()
+                .children(new java.util.ArrayList<>(List.of(node))).build();
+
+        when(currentUserProvider.requireCurrentUser(acc)).thenReturn(actor);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
+                .thenReturn(Optional.empty());
+        when(documentRepository.findByIdWithPessimisticLock(documentId)).thenReturn(Optional.of(document));
+        when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
+                documentId, 0L)).thenReturn(List.of());
+        // Cache hit for version 0
+        when(treeCache.get(documentId, 0L)).thenReturn(Optional.of(cachedTree));
+        when(objectMapper.writeValueAsString(any())).thenReturn("{\"children\":[]}");
+
+        SubmitOperationRequest request = new SubmitOperationRequest(
+                operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
+        service.submitOperation(documentId, request, acc);
+
+        // readValue must NOT be called — the cache provided the tree
+        verify(objectMapper, never()).readValue(anyString(), eq(DocumentTree.class));
+        // Cache is updated: put at nextVersion=1, evict at currentVersion=0
+        verify(treeCache).put(eq(documentId), eq(1L), any(DocumentTree.class));
+        verify(treeCache).evict(documentId, 0L);
+    }
+
+    @Test
     void serviceConstructor_registersRetriesAndResyncCounters_inPrometheusFormat() {
         PrometheusMeterRegistry prometheusRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         new DocumentOperationServiceImpl(
@@ -428,7 +512,8 @@ class DocumentOperationServiceTest {
                 mock(OperationTransformer.class),
                 mock(ObjectMapper.class),
                 mock(EntityManager.class),
-                prometheusRegistry);
+                prometheusRegistry,
+                mock(DocumentTreeCache.class));
 
         String scrape = prometheusRegistry.scrape();
         assertThat(scrape).contains("operations_retries_total");
