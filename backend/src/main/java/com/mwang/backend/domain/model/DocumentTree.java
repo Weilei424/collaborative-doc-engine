@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Data
 @NoArgsConstructor
@@ -18,6 +19,16 @@ public class DocumentTree {
 
     @Builder.Default
     private List<DocumentNode> children = new ArrayList<>();
+
+    public DocumentTree copy() {
+        List<DocumentNode> childrenCopy = children == null ? new ArrayList<>() :
+                children.stream()
+                        .map(DocumentNode::copy)
+                        .collect(Collectors.toCollection(ArrayList::new));
+        return DocumentTree.builder()
+                .children(childrenCopy)
+                .build();
+    }
 
     public DocumentNode nodeAt(List<Integer> path) {
         if (path == null || path.isEmpty()) {
