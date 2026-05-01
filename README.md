@@ -72,4 +72,4 @@ Redis is used for low-latency cross-instance fanout of accepted operations and p
 
 **Operator signals:**
 - `redis.publish_failures` counter rising indicates Redis is reachable but failing commands; `redis.circuit_open` spiking means the circuit breaker has tripped and all publishes are being dropped.
-- `/actuator/health` (requires authentication) shows Redis health as an advisory indicator.
+- `/actuator/health` shows Redis health as an advisory indicator (publicly accessible; `/actuator/health/readiness` excludes Redis so a Redis outage does not affect the readiness probe).
