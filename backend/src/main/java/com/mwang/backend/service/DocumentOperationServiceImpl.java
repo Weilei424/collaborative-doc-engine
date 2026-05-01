@@ -2,6 +2,8 @@ package com.mwang.backend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mwang.backend.collaboration.DocumentTreeCache;
+import com.mwang.backend.collaboration.ParsedAcceptedOp;
 import com.mwang.backend.collaboration.OperationTransformer;
 import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentOperation;
@@ -51,6 +53,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     private final Timer perOpJsonParseTimer;
     private final Timer treeApplyTimer;
     private final Timer persistOperationTimer;
+    private final DocumentTreeCache treeCache;
 
     public DocumentOperationServiceImpl(
             DocumentRepository documentRepository,
@@ -60,7 +63,8 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             OperationTransformer transformer,
             ObjectMapper objectMapper,
             EntityManager entityManager,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            DocumentTreeCache treeCache) {
         this.documentRepository = documentRepository;
         this.operationRepository = operationRepository;
         this.currentUserProvider = currentUserProvider;
@@ -69,6 +73,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         this.objectMapper = objectMapper;
         this.entityManager = entityManager;
         this.meterRegistry = meterRegistry;
+        this.treeCache = treeCache;
         this.conflictedCounter = meterRegistry.counter("operations.conflicted");
         this.noopCounter = meterRegistry.counter("operations.noop");
         this.idempotentCounter = meterRegistry.counter("operations.idempotent");
@@ -141,24 +146,31 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             conflictedCounter.increment();
         }
 
+        // 6a. Pre-parse all intervening op payloads once before the transform loop
+        long parseStart = System.nanoTime();
+        List<ParsedAcceptedOp> parsed;
+        try {
+            parsed = intervening.stream()
+                    .map(op -> {
+                        try {
+                            return new ParsedAcceptedOp(op.getOperationType(), objectMapper.readTree(op.getPayload()));
+                        } catch (Exception e) {
+                            throw new IllegalStateException("Failed to deserialize accepted operation payload", e);
+                        }
+                    })
+                    .toList();
+        } finally {
+            perOpJsonParseTimer.record(System.nanoTime() - parseStart, java.util.concurrent.TimeUnit.NANOSECONDS);
+        }
+
         // 7. Transform incoming op against each intervening op in order
         DocumentOperationType currentType = request.operationType();
         JsonNode currentPayload = request.payload();
         long loopStart = System.nanoTime();
         try {
-            for (DocumentOperation accepted : intervening) {
-                long parseStart = System.nanoTime();
-                JsonNode acceptedPayload;
-                try {
-                    acceptedPayload = objectMapper.readTree(accepted.getPayload());
-                } catch (Exception e) {
-                    throw new IllegalStateException("Failed to deserialize accepted operation payload", e);
-                } finally {
-                    perOpJsonParseTimer.record(System.nanoTime() - parseStart, java.util.concurrent.TimeUnit.NANOSECONDS);
-                }
-
+            for (ParsedAcceptedOp accepted : parsed) {
                 Optional<JsonNode> transformed = transformer.transform(
-                        currentType, currentPayload, accepted.getOperationType(), acceptedPayload);
+                        currentType, currentPayload, accepted.type(), accepted.payload());
                 if (transformed.isEmpty()) {
                     noopCounter.increment();
                     currentType = DocumentOperationType.NO_OP;
@@ -172,16 +184,27 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         }
 
         // 8. Apply to document tree (skip for NO_OP)
-        long nextVersion = document.getCurrentVersion() + 1;
+        long currentVersion = document.getCurrentVersion();
+        long nextVersion = currentVersion + 1;
         if (currentType != DocumentOperationType.NO_OP) {
             long treeStart = System.nanoTime();
             try {
-                DocumentTree tree = objectMapper.readValue(document.getContent(), DocumentTree.class);
+                final Document lockedDoc = document; // needed: document is re-assigned above (not effectively-final for lambda)
+                DocumentTree tree = treeCache.get(documentId, currentVersion)
+                        .orElseGet(() -> {
+                            try {
+                                return objectMapper.readValue(lockedDoc.getContent(), DocumentTree.class);
+                            } catch (Exception e) {
+                                throw new IllegalStateException("Failed to deserialize document tree from content", e);
+                            }
+                        });
                 JsonNode enrichedPayload = tree.applyOperation(currentType, currentPayload);
                 currentPayload = enrichedPayload;
                 document.setContent(objectMapper.writeValueAsString(tree));
+                treeCache.put(documentId, nextVersion, tree);
+                treeCache.evict(documentId, currentVersion);
             } catch (Exception e) {
-                throw new InvalidOperationException("Failed to apply operation to document: " + e.getMessage());
+                throw new InvalidOperationException("Failed to apply operation to document: " + e.getMessage(), e);
             } finally {
                 treeApplyTimer.record(System.nanoTime() - treeStart, java.util.concurrent.TimeUnit.NANOSECONDS);
             }
