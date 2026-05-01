@@ -220,6 +220,9 @@ class DocumentOperationServiceTest {
                 .actor(actor)
                 .build();
 
+        DocumentTree cachedTree = DocumentTree.builder().children(new java.util.ArrayList<>()).build();
+        when(treeCache.get(documentId, 0L)).thenReturn(Optional.of(cachedTree));
+
         when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         // assertCanWrite does not throw — actor is authorized
@@ -245,7 +248,12 @@ class DocumentOperationServiceTest {
                 org.mockito.ArgumentCaptor.forClass(DocumentOperation.class);
         verify(operationRepository).save(captor.capture());
         assertThat(captor.getValue().getOperationType()).isEqualTo(DocumentOperationType.NO_OP);
-        // Document content NOT modified — objectMapper.readValue should never be called for tree deserialization
+        // Document content NOT modified for NO_OP
+        assertThat(document.getContent()).isEqualTo("{\"children\":[]}");
+        // Cache lifecycle honoured even for NO_OP: put new version before evicting old
+        verify(treeCache).put(documentId, 1L, cachedTree);
+        verify(treeCache).evict(documentId, 0L);
+        // No tree deserialization needed — cache was hit
         verify(objectMapper, never()).readValue(any(String.class), org.mockito.ArgumentMatchers.eq(
                 com.mwang.backend.domain.model.DocumentTree.class));
         // Auth checked twice: once pre-idempotency on unlocked doc, once post-lock on locked doc
