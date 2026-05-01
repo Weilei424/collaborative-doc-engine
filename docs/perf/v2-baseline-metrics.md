@@ -107,3 +107,36 @@
 | `persistOperation` | 0.0922 | 0.1208 | 0.1700 | 0.4163 |
 | `publishRedis` | 0.713 | 2.875 | 5.497 | 29.784 |
 | `publishKafka` | 1.622 | 4.440 | 9.945 | 28.769 |
+
+---
+
+## Post-P18 Results (from `load-test/benchmark-contention.js`)
+
+> Captured 2026-05-01. P18 deliverables: pre-parse intervening ops into `ParsedAcceptedOp` before the transform loop; Caffeine tree cache keyed by `(documentId, serverVersion)`. Metrics from a fresh backend instance (no accumulated state from prior runs).
+
+### Post-P18 k6 End-to-End Operation Latency
+
+| Metric | Value |
+|---|---|
+| avg | 1140ms |
+| min | 7ms |
+| med (p50) | 492ms |
+| p90 | 3170ms |
+| p95 | 3360ms |
+| max | 3650ms |
+| operations_accepted | 8,870 |
+
+> End-to-end latency is dominated by `lockAcquisition` wait (P19 target), not the timers P18 optimised.
+
+### Post-P18 Hot-Path Timer Histogram (from `/actuator/prometheus`)
+
+| Timer | p50 (ms) | p95 (ms) | p99 (ms) | max (ms) | Baseline p95 (ms) | Δ p95 |
+|---|---|---|---|---|---|---|
+| `otTransformLoop` | 1.442 | **1.769** | 6.226 | 11.155 | 7.078 | **−75%** ✓ |
+| `treeApply` | 0.0594 | **0.0799** | 0.0963 | 0.870 | 0.0543 | **+47%** ✗ |
+
+### Perf Gate Assessment
+
+- **`otTransformLoop` p95**: **gate passed**. Pre-parsing intervening ops eliminated in-loop Jackson deserialization. p95 dropped from 7.078 ms → 1.769 ms (−75%), well above the >20% target.
+- **`treeApply` p95**: **gate not passed**. p95 increased from 0.0543 ms → 0.0799 ms (+47%). The overhead is the Caffeine put/evict pair now firing on every version advance, including NO_OP paths after the code-review fix. In the baseline these were no-ops; now they are real cache writes. The absolute regression is ~47 µs at p95.
+- **Overall**: the primary optimisation target (`otTransformLoop`) achieved a 75% p95 reduction. `treeApply` regressed by a small constant (sub-0.1 ms) due to cache lifecycle overhead added on every operation. If the `treeApply` gate must be satisfied, the fix is to skip the tree load and cache put for NO_OP (revert NO_OP to bypass the block entirely) at the cost of leaving stale cache entries until TTL — acceptable per spec line 127.
