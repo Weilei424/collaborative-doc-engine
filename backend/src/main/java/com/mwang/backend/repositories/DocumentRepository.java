@@ -5,6 +5,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -71,4 +72,17 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT d FROM Document d WHERE d.id = :id")
     Optional<Document> findByIdWithPessimisticLock(@Param("id") UUID id);
+
+    @Modifying
+    @Query("""
+            UPDATE Document d
+            SET d.currentVersion = :nextVersion, d.content = :content
+            WHERE d.id = :documentId AND d.currentVersion = :expectedVersion
+            """)
+    int tryAdvanceVersion(
+            @Param("documentId") UUID documentId,
+            @Param("expectedVersion") long expectedVersion,
+            @Param("nextVersion") long nextVersion,
+            @Param("content") String content
+    );
 }
