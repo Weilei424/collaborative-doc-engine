@@ -85,7 +85,7 @@ class DocumentOperationConcurrencyTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void concurrentSubmits_serializeThroughPessimisticLock() throws Exception {
+    void concurrentSubmits_serializeWithCas() throws Exception {
         JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
         when(accessor.getSessionId()).thenReturn("test-session");
