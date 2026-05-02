@@ -54,20 +54,20 @@ class MetricsConfigTest {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         new MetricsConfig().histogramCustomizer().customize(registry);
 
-        Timer.builder("lockAcquisition")
+        Timer.builder("loadDocument")
                 .register(registry)
                 .record(Duration.ofMillis(10));
 
         String scrape = registry.scrape();
         assertThat(scrape)
-                .as("lockAcquisition must expose p50/p95/p99 quantile gauges in the Prometheus scrape")
-                .contains("lockAcquisition_seconds{quantile=\"0.5\"");
-        assertThat(scrape).contains("lockAcquisition_seconds{quantile=\"0.95\"");
-        assertThat(scrape).contains("lockAcquisition_seconds{quantile=\"0.99\"");
+                .as("loadDocument must expose p50/p95/p99 quantile gauges in the Prometheus scrape")
+                .contains("loadDocument_seconds{quantile=\"0.5\"");
+        assertThat(scrape).contains("loadDocument_seconds{quantile=\"0.95\"");
+        assertThat(scrape).contains("loadDocument_seconds{quantile=\"0.99\"");
     }
 
     @Test
-    void prometheusScrapeSurface_allNineTimersAndConfigMetricsPresent() {
+    void prometheusScrapeSurface_allEightTimersAndConfigMetricsPresent() {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         MetricsConfig config = new MetricsConfig();
         config.histogramCustomizer().customize(registry);
@@ -76,7 +76,7 @@ class MetricsConfigTest {
         config.redisPublishFailuresCounter(registry);
 
         for (String name : new String[]{
-                "lockAcquisition", "loadDocument", "loadInterveningOps",
+                "loadDocument", "loadInterveningOps",
                 "otTransformLoop", "perOpJsonParse", "treeApply",
                 "persistOperation", "publishRedis", "publishKafka"}) {
             Timer.builder(name).register(registry).record(Duration.ofMillis(1));
@@ -85,13 +85,15 @@ class MetricsConfigTest {
         String scrape = registry.scrape();
 
         for (String name : new String[]{
-                "lockAcquisition", "loadDocument", "loadInterveningOps",
+                "loadDocument", "loadInterveningOps",
                 "otTransformLoop", "perOpJsonParse", "treeApply",
                 "persistOperation", "publishRedis", "publishKafka"}) {
             assertThat(scrape)
                     .as(name + " must expose p95 quantile gauge in the Prometheus scrape")
                     .contains(name + "_seconds{quantile=\"0.95\"");
         }
+        assertThat(scrape).as("lockAcquisition removed in P19 — must not have quantile gauges")
+                .doesNotContain("lockAcquisition_seconds{quantile=");
 
         // outbox metrics are now gauges (no _total suffix)
         assertThat(scrape).as("outbox.pending gauge must appear").contains("outbox_pending");
