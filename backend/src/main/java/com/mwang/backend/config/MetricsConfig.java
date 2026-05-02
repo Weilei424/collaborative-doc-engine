@@ -18,7 +18,7 @@ import java.util.Set;
 public class MetricsConfig {
 
     private static final Set<String> TIMED_OPERATIONS = Set.of(
-            "lockAcquisition", "loadDocument", "loadInterveningOps",
+            "loadDocument", "loadInterveningOps",
             "otTransformLoop", "perOpJsonParse", "treeApply",
             "persistOperation", "publishRedis", "publishKafka");
 
