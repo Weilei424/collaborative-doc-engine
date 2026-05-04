@@ -23,11 +23,8 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -45,6 +42,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
     private final DocumentTreeCache treeCache;
+    private final DocumentOperationCommitter committer;
     private final int maxAttempts;
 
     private final Counter idempotentCounter;
@@ -67,6 +65,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             ObjectMapper objectMapper,
             MeterRegistry meterRegistry,
             DocumentTreeCache treeCache,
+            DocumentOperationCommitter committer,
             @Value("${collaboration.cas.max-attempts:5}") int maxAttempts) {
         this.documentRepository = documentRepository;
         this.operationRepository = operationRepository;
@@ -76,6 +75,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
         this.treeCache = treeCache;
+        this.committer = committer;
         this.maxAttempts = maxAttempts;
 
         this.idempotentCounter = meterRegistry.counter("operations.idempotent");
@@ -112,9 +112,9 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         // Phase 2 — Retry loop
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
 
-            // a. Read snapshot (no lock)
+            // a. Read snapshot (no lock); eager-load owner + collaborators for ACL check
             Document document = loadDocumentTimer.record(() ->
-                    documentRepository.findById(documentId)
+                    documentRepository.findDetailedById(documentId)
                             .orElseThrow(() -> new DocumentNotFoundException(documentId)));
 
             List<DocumentOperation> intervening = loadInterveningOpsTimer.record(() ->
@@ -186,9 +186,10 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
 
             long treeStart = System.nanoTime();
             String serializedContent;
+            DocumentTree tree;
             try {
                 final Document doc = document;
-                DocumentTree tree = treeCache.get(documentId, expectedVersion)
+                tree = treeCache.get(documentId, expectedVersion)
                         .orElseGet(() -> {
                             try {
                                 return objectMapper.readValue(doc.getContent(), DocumentTree.class);
@@ -202,8 +203,6 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                     enrichedPayload = tree.applyOperation(finalType, finalPayload);
                     currentPayload = enrichedPayload;
                 }
-                treeCache.put(documentId, nextVersion, tree);
-                treeCache.evict(documentId, expectedVersion);
                 serializedContent = objectMapper.writeValueAsString(tree);
             } catch (Exception e) {
                 throw new InvalidOperationException(
@@ -219,13 +218,18 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             final long committedNextVersion = nextVersion;
             final String committedContent = serializedContent;
             final Document committedDocument = document;
+            final DocumentTree committedTree = tree;
 
             try {
                 DocumentOperation accepted = persistOperationTimer.record(() ->
-                        commitOperation(documentId, expectedVersion, committedNextVersion,
+                        committer.commit(documentId, expectedVersion, committedNextVersion,
                                 committedContent, committedDocument, actor,
                                 request.operationId(), clientSessionId,
                                 request.baseVersion(), committedType, committedPayload));
+
+                // Update cache only after the CAS commit succeeds
+                treeCache.put(documentId, committedNextVersion, committedTree);
+                treeCache.evict(documentId, expectedVersion);
 
                 meterRegistry.counter("operations.accepted", "type", committedType.name()).increment();
                 return toResponse(accepted, documentId);
@@ -246,37 +250,6 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
 
         throw new OperationConflictException(
                 "Operation could not be committed after " + maxAttempts + " attempts for document " + documentId);
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    DocumentOperation commitOperation(
-            UUID documentId, long expectedVersion, long nextVersion,
-            String serializedContent, Document document, User actor,
-            UUID operationId, String clientSessionId, long baseVersion,
-            DocumentOperationType operationType, JsonNode payload) {
-
-        int rows = documentRepository.tryAdvanceVersion(
-                documentId, expectedVersion, nextVersion, serializedContent);
-        if (rows == 0) {
-            throw new CasMissException();
-        }
-
-        DocumentOperation op = DocumentOperation.builder()
-                .document(document)
-                .actor(actor)
-                .operationId(operationId)
-                .clientSessionId(clientSessionId)
-                .baseVersion(baseVersion)
-                .serverVersion(nextVersion)
-                .operationType(operationType)
-                .payload(payloadString(payload))
-                .build();
-
-        try {
-            return operationRepository.save(op);
-        } catch (DataIntegrityViolationException e) {
-            throw new IdempotentOperationException(operationId);
-        }
     }
 
     private void validatePayload(DocumentOperationType type, JsonNode payload) {
@@ -336,11 +309,4 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                 op.getClientSessionId(), op.getCreatedAt() != null ? op.getCreatedAt() : Instant.now());
     }
 
-    private String payloadString(JsonNode payload) {
-        try {
-            return objectMapper.writeValueAsString(payload);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to serialize payload", e);
-        }
-    }
 }
