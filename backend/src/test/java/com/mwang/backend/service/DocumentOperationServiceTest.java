@@ -16,6 +16,8 @@ import com.mwang.backend.service.exception.DocumentAccessDeniedException;
 import com.mwang.backend.service.exception.DocumentNotFoundException;
 import com.mwang.backend.service.exception.InvalidOperationException;
 import com.mwang.backend.service.exception.OperationConflictException;
+import com.mwang.backend.service.exception.StaleClientException;
+import static org.mockito.Mockito.doNothing;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.SubmitOperationRequest;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -84,7 +86,7 @@ class DocumentOperationServiceTest {
                 documentRepository, operationRepository,
                 currentUserProvider, authorizationService,
                 transformer, objectMapper,
-                meterRegistry, treeCache, committer, 5);
+                meterRegistry, treeCache, committer, 5, 200);
     }
 
     private SimpMessageHeaderAccessor accessorWithSession(String sessionId) {
@@ -536,10 +538,71 @@ class DocumentOperationServiceTest {
                 mockRepo, mockOpRepo,
                 mock(CurrentUserProvider.class), mock(DocumentAuthorizationService.class),
                 mock(OperationTransformer.class), mockMapper,
-                prometheusRegistry, mock(DocumentTreeCache.class), prometheusCommitter, 5);
+                prometheusRegistry, mock(DocumentTreeCache.class), prometheusCommitter, 5, 200);
 
         String scrape = prometheusRegistry.scrape();
         assertThat(scrape).doesNotContain("lockAcquisition");
         assertThat(scrape).contains("operations_resync_required_total");
+    }
+
+    // ---- stale cap ----
+
+    @Test
+    void submitOperation_staleClient_throwsStaleClientException() throws Exception {
+        JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
+        Document staleDoc = Document.builder().id(documentId).currentVersion(206L)
+                .content("{\"children\":[]}").owner(actor).build();
+
+        when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
+        when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
+                .thenReturn(Optional.empty());
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(staleDoc));
+
+        // baseVersion=0, currentVersion=206, staleCap=200 → lag=206 > 200 → reject
+        assertThatThrownBy(() -> service.submitOperation(documentId,
+                new SubmitOperationRequest(operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload),
+                accessor))
+                .isInstanceOf(StaleClientException.class)
+                .satisfies(ex -> {
+                    StaleClientException sce = (StaleClientException) ex;
+                    assertThat(sce.getOperationId()).isEqualTo(operationId);
+                    assertThat(sce.getCurrentServerVersion()).isEqualTo(206L);
+                });
+
+        // Counter incremented by the stale check
+        assertThat(meterRegistry.counter("operations.resync_required").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void submitOperation_lagEqualsToCap_notRejected() throws Exception {
+        JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
+        // Use staleCap=5: currentVersion=5, baseVersion=0 → lag=5, equals cap → NOT rejected (strict >)
+        DocumentOperationCommitter localCommitter = new DocumentOperationCommitter(
+                documentRepository, operationRepository, objectMapper);
+        DocumentOperationServiceImpl smallCapService = new DocumentOperationServiceImpl(
+                documentRepository, operationRepository,
+                currentUserProvider, authorizationService,
+                transformer, objectMapper,
+                meterRegistry, treeCache, localCommitter, 1, 5);
+
+        UUID freshOpId = UUID.randomUUID();
+        Document docAtCap = Document.builder().id(documentId).currentVersion(5L)
+                .content("{\"children\":[]}").owner(actor).build();
+
+        when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
+        when(operationRepository.findByDocumentIdAndOperationId(documentId, freshOpId))
+                .thenReturn(Optional.empty());
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(docAtCap));
+        doNothing().when(authorizationService).assertCanWrite(docAtCap, actor);
+        when(operationRepository
+                .findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(documentId, 0L))
+                .thenReturn(List.of());
+
+        // Passes the stale check (5 > 5 is false); will throw some other exception due to
+        // incomplete mock setup for the tree/commit path — but must NOT throw StaleClientException
+        assertThatThrownBy(() -> smallCapService.submitOperation(documentId,
+                new SubmitOperationRequest(freshOpId, 0L, DocumentOperationType.INSERT_TEXT, validPayload),
+                accessor))
+                .isNotInstanceOf(StaleClientException.class);
     }
 }
