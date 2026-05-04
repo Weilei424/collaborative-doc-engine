@@ -7,6 +7,7 @@ import com.mwang.backend.domain.DocumentOperation;
 import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.domain.DocumentVisibility;
 import com.mwang.backend.domain.User;
+import com.mwang.backend.domain.model.DocumentTree;
 import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.repositories.UserRepository;
@@ -154,5 +155,16 @@ class DocumentOperationAdversarialTest extends AbstractIntegrationTest {
         // Final document currentVersion matches
         Document finalDoc = documentRepository.findById(document.getId()).orElseThrow();
         assertThat(finalDoc.getCurrentVersion()).isEqualTo(totalOps);
+
+        // Final materialized content matches replay from operation log
+        DocumentTree replayTree = mapper.readValue(document.getContent(), DocumentTree.class);
+        for (DocumentOperation op : dbOps) {
+            if (op.getOperationType() != DocumentOperationType.NO_OP) {
+                JsonNode opPayload = mapper.readTree(op.getPayload());
+                replayTree.applyOperation(op.getOperationType(), opPayload);
+            }
+        }
+        String replayContent = mapper.writeValueAsString(replayTree);
+        assertThat(finalDoc.getContent()).isEqualTo(replayContent);
     }
 }
