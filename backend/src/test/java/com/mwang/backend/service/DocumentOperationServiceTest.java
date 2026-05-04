@@ -205,7 +205,7 @@ class DocumentOperationServiceTest {
         when(objectMapper.writeValueAsString(any())).thenReturn("{\"children\":[]}");
         when(documentRepository.tryAdvanceVersion(eq(documentId), eq(0L), eq(1L), anyString()))
                 .thenReturn(1);
-        when(operationRepository.save(any())).thenAnswer(inv -> {
+        when(operationRepository.saveAndFlush(any())).thenAnswer(inv -> {
             DocumentOperation op = inv.getArgument(0);
             return DocumentOperation.builder()
                     .operationId(op.getOperationId()).serverVersion(op.getServerVersion())
@@ -246,7 +246,7 @@ class DocumentOperationServiceTest {
         when(documentRepository.tryAdvanceVersion(eq(documentId), eq(0L), eq(1L), anyString()))
                 .thenReturn(0)   // miss
                 .thenReturn(1);  // hit
-        when(operationRepository.save(any())).thenAnswer(inv -> {
+        when(operationRepository.saveAndFlush(any())).thenAnswer(inv -> {
             DocumentOperation op = inv.getArgument(0);
             return DocumentOperation.builder()
                     .operationId(op.getOperationId()).serverVersion(op.getServerVersion())
@@ -350,7 +350,7 @@ class DocumentOperationServiceTest {
         when(objectMapper.writeValueAsString(any())).thenReturn("{\"children\":[]}");
         when(documentRepository.tryAdvanceVersion(any(), anyLong(), anyLong(), anyString())).thenReturn(1);
         // INSERT throws (document_id, operation_id) unique constraint violation
-        when(operationRepository.save(any())).thenThrow(new DataIntegrityViolationException("uk_doc_op"));
+        when(operationRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("uk_document_operations_document_operation"));
         // The service then queries by operationId to return the already-accepted row
         DocumentOperation accepted = buildAccepted(1L);
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
@@ -419,7 +419,7 @@ class DocumentOperationServiceTest {
         when(transformer.transform(any(), any(), any(), any())).thenReturn(Optional.empty());
         when(objectMapper.writeValueAsString(any())).thenReturn("{\"children\":[]}");
         when(documentRepository.tryAdvanceVersion(any(), anyLong(), anyLong(), anyString())).thenReturn(1);
-        when(operationRepository.save(any())).thenAnswer(inv -> {
+        when(operationRepository.saveAndFlush(any())).thenAnswer(inv -> {
             DocumentOperation op = inv.getArgument(0);
             return DocumentOperation.builder()
                     .operationId(op.getOperationId()).serverVersion(op.getServerVersion())
@@ -463,7 +463,7 @@ class DocumentOperationServiceTest {
         when(objectMapper.readValue(anyString(), eq(DocumentTree.class))).thenReturn(emptyTree);
         when(objectMapper.writeValueAsString(any())).thenReturn(treeJson);
         when(documentRepository.tryAdvanceVersion(any(), anyLong(), anyLong(), anyString())).thenReturn(1);
-        when(operationRepository.save(any())).thenAnswer(inv -> {
+        when(operationRepository.saveAndFlush(any())).thenAnswer(inv -> {
             DocumentOperation op = inv.getArgument(0);
             return DocumentOperation.builder()
                     .operationId(op.getOperationId()).serverVersion(op.getServerVersion())
@@ -508,7 +508,7 @@ class DocumentOperationServiceTest {
         when(objectMapper.readValue(anyString(), eq(DocumentTree.class))).thenReturn(emptyTree);
         when(objectMapper.writeValueAsString(any())).thenReturn(treeJson);
         when(documentRepository.tryAdvanceVersion(any(), anyLong(), anyLong(), anyString())).thenReturn(1);
-        when(operationRepository.save(any())).thenAnswer(inv -> {
+        when(operationRepository.saveAndFlush(any())).thenAnswer(inv -> {
             DocumentOperation op = inv.getArgument(0);
             return DocumentOperation.builder()
                     .operationId(op.getOperationId()).serverVersion(op.getServerVersion())
