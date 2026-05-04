@@ -153,6 +153,12 @@ export default function(data) {
           'id': 'sub-0',
           'destination': '/topic/documents/' + docId + '/operations',
         }, ''));
+        // Subscribe to the user-specific error queue so OperationConflictException
+        // responses are received and handled rather than silently dropped.
+        sockjsSend(socket, encodeStompFrame('SUBSCRIBE', {
+          'id': 'sub-1',
+          'destination': '/user/queue/errors',
+        }, ''));
         state.phase = 'subscribed';
         socket.setTimeout(function() {
           state.phase = 'operating';
@@ -163,10 +169,9 @@ export default function(data) {
 
       if (state.phase !== 'operating') return;
 
-      // STOMP ERROR frame (e.g. OperationConflictException after max CAS retries).
-      // Spring keeps the WebSocket open after sending ERROR, so we must handle it
-      // explicitly — otherwise the VU hangs until the 60 s session timeout fires.
-      if (msg.includes('"ERROR') || msg.includes('\nERROR\n')) {
+      // Error from /user/queue/errors (e.g. OPERATION_CONFLICT after max CAS retries).
+      // Without this check the VU hangs until the 60 s session timeout fires.
+      if (msg.includes('"OPERATION_CONFLICT"') || msg.includes('"INVALID_OPERATION"')) {
         if (state.pendingOpId) {
           operationErrorRate.add(1);
           state.pendingOpId = null;
