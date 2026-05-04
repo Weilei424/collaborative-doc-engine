@@ -58,9 +58,15 @@ public class DocumentOperationCommitter {
                 .build();
 
         try {
-            return operationRepository.save(op);
+            // saveAndFlush forces the INSERT within this transaction so the unique-constraint
+            // violation is thrown here rather than at commit time (where save() would defer it).
+            return operationRepository.saveAndFlush(op);
         } catch (DataIntegrityViolationException e) {
-            throw new IdempotentOperationException(operationId);
+            String msg = e.getMessage() != null ? e.getMessage() : "";
+            if (msg.contains("uk_document_operations_document_operation")) {
+                throw new IdempotentOperationException(operationId);
+            }
+            throw e;
         }
     }
 
