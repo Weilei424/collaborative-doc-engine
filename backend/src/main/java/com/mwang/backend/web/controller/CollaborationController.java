@@ -6,7 +6,9 @@ import com.mwang.backend.service.CollaborationPresenceService;
 import com.mwang.backend.service.CollaborationSessionService;
 import com.mwang.backend.service.DocumentOperationService;
 import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
+import com.mwang.backend.service.exception.StaleClientException;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
+import com.mwang.backend.web.model.OperationErrorResponse;
 import com.mwang.backend.web.model.LeaveSessionRequest;
 import com.mwang.backend.web.model.PresenceUpdateRequest;
 import com.mwang.backend.web.model.SubmitOperationRequest;
@@ -14,7 +16,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
 
 import java.util.UUID;
@@ -76,5 +80,13 @@ public class CollaborationController {
             throw new InvalidCollaborationRequestException("Leave session requires sessionId");
         }
         return request.sessionId();
+    }
+
+    @MessageExceptionHandler(StaleClientException.class)
+    @SendToUser(value = "/queue/errors.{documentId}", broadcast = false)
+    public OperationErrorResponse handleStaleClient(
+            StaleClientException ex,
+            @DestinationVariable UUID documentId) {
+        return new OperationErrorResponse("RESYNC_REQUIRED", ex.getOperationId(), ex.getCurrentServerVersion());
     }
 }
