@@ -140,3 +140,19 @@
 - **`otTransformLoop` p95**: **gate passed**. Pre-parsing intervening ops eliminated in-loop Jackson deserialization. p95 dropped from 7.078 ms → 1.769 ms (−75%), well above the >20% target.
 - **`treeApply` p95**: **gate not passed**. p95 increased from 0.0543 ms → 0.0799 ms (+47%). The overhead is the Caffeine put/evict pair now firing on every version advance, including NO_OP paths after the code-review fix. In the baseline these were no-ops; now they are real cache writes. The absolute regression is ~47 µs at p95.
 - **Overall**: the primary optimisation target (`otTransformLoop`) achieved a 75% p95 reduction. `treeApply` regressed by a small constant (~47 µs at p95) due to the cache lifecycle now correctly firing on every version advance, including NO_OP paths. The implementation and tests commit to this behavior as correct. Satisfying the `treeApply` gate as originally written would require a deliberate spec change — either relaxing the "on version advance" cache lifecycle contract for NO_OP (spec line 126) or tightening the gate definition to exclude the NO_OP-path overhead — not a code revert.
+
+---
+
+## Post-P19 Load Test (CAS retry loop — pending collection)
+
+> **Status: pending.** Phase 19 replaced the pessimistic-lock pipeline with a speculative OT + CAS retry loop. The DoD requires a `submit.total` p95 at 100 concurrent submitters that drops vs. the post-P18 contention baseline, and `operations.retries{attempt>3}` staying below threshold under that load. Run the k6 script against a local compose stack with the Phase 19 build to collect these numbers and fill in this section.
+
+| Metric | Post-P18 value | Post-P19 value | Δ |
+|---|---|---|---|
+| `submit.total` p95 @ 100 VU | *(from k6 run)* | — | — |
+| `operations.retries{attempt>3}` rate | — | — | — |
+
+### Post-P19 DoD Gate Assessment
+
+- **`submit.total` p95 improvement**: pending k6 run.
+- **`operations.retries{attempt>3}` threshold**: pending k6 run.
