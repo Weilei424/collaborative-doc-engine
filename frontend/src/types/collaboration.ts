@@ -45,3 +45,9 @@ export interface PresenceEvent {
   type: string
   data: unknown
 }
+
+export interface OperationErrorPayload {
+  error: string
+  operationId: string
+  currentServerVersion: number
+}
