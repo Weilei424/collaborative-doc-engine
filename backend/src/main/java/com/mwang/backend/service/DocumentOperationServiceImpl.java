@@ -98,10 +98,14 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         User actor = currentUserProvider.requireCurrentUser(headerAccessor);
         validatePayload(request.operationType(), request.payload());
 
-        // Pre-loop idempotency fast path
+        // Pre-loop idempotency fast path — ACL checked even on replay to prevent
+        // unauthorized resubmission causing duplicate fanout after permission revocation
         Optional<DocumentOperation> priorOpt =
                 operationRepository.findByDocumentIdAndOperationId(documentId, request.operationId());
         if (priorOpt.isPresent()) {
+            Document aclDoc = documentRepository.findDetailedById(documentId)
+                    .orElseThrow(() -> new DocumentNotFoundException(documentId));
+            authorizationService.assertCanWrite(aclDoc, actor);
             idempotentCounter.increment();
             return toResponse(priorOpt.get(), documentId);
         }
@@ -121,7 +125,11 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                     operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                             documentId, request.baseVersion()));
 
-            // b. Idempotency re-check against fresh snapshot
+            // b. ACL check (not retried — revocation is final; checked before idempotency
+            //    re-check so a revoked user cannot get a cached idempotent response)
+            authorizationService.assertCanWrite(document, actor);
+
+            // c. Idempotency re-check against fresh snapshot
             boolean alreadyAccepted = intervening.stream()
                     .anyMatch(op -> op.getOperationId().equals(request.operationId()));
             if (alreadyAccepted) {
@@ -131,9 +139,6 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                         .findFirst().orElseThrow();
                 return toResponse(acceptedOp, documentId);
             }
-
-            // c. ACL check (not retried — revocation is final)
-            authorizationService.assertCanWrite(document, actor);
 
             if (!intervening.isEmpty()) {
                 conflictedCounter.increment();
