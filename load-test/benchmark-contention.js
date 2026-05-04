@@ -162,6 +162,26 @@ export default function(data) {
       }
 
       if (state.phase !== 'operating') return;
+
+      // STOMP ERROR frame (e.g. OperationConflictException after max CAS retries).
+      // Spring keeps the WebSocket open after sending ERROR, so we must handle it
+      // explicitly — otherwise the VU hangs until the 60 s session timeout fires.
+      if (msg.includes('"ERROR') || msg.includes('\nERROR\n')) {
+        if (state.pendingOpId) {
+          operationErrorRate.add(1);
+          state.pendingOpId = null;
+          state.opCount++;
+        }
+        if (state.opCount >= OPS_PER_ITERATION) {
+          state.phase = 'done';
+          sockjsSend(socket, encodeStompFrame('DISCONNECT', {}, ''));
+          socket.close();
+        } else {
+          socket.setTimeout(function() { submitNext(socket, docId, state); }, THINK_TIME_MS);
+        }
+        return;
+      }
+
       if (!msg.includes('serverVersion')) return;
 
       // Keep baseVersion current from ANY accepted op on this document.
