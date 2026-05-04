@@ -105,11 +105,12 @@ class DocumentOperationServiceTest {
     // ---- pre-loop idempotency ----
 
     @Test
-    void preLoopIdempotencyCheck_returnsExistingResponse_withoutPersisting() throws Exception {
+    void preLoopIdempotencyCheck_authorizedActor_returnsExistingResponse_withoutPersisting() throws Exception {
         JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.of(buildAccepted(1L)));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         when(objectMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}"))
                 .thenReturn(realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}"));
 
@@ -120,7 +121,24 @@ class DocumentOperationServiceTest {
         assertThat(response.operationId()).isEqualTo(operationId);
         assertThat(response.serverVersion()).isEqualTo(1L);
         verify(operationRepository, never()).save(any());
-        verify(documentRepository, never()).findById(any());
+        verify(authorizationService).assertCanWrite(document, actor);
+    }
+
+    @Test
+    void preLoopIdempotencyCheck_revokedActor_throwsAccessDenied() throws Exception {
+        JsonNode validPayload = realMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
+        when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
+        when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
+                .thenReturn(Optional.of(buildAccepted(1L)));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
+        org.mockito.Mockito.doThrow(new DocumentAccessDeniedException(documentId, actor.getId()))
+                .when(authorizationService).assertCanWrite(document, actor);
+
+        assertThatThrownBy(() -> service.submitOperation(documentId,
+                new SubmitOperationRequest(operationId, 0L, DocumentOperationType.INSERT_TEXT, validPayload),
+                accessor))
+                .isInstanceOf(DocumentAccessDeniedException.class);
+        verify(operationRepository, never()).save(any());
     }
 
     // ---- validation ----
