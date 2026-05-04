@@ -109,10 +109,7 @@ function failPendingOp(socket, docId, state) {
   if (!state.pendingOpId) return;
   operationErrorRate.add(1);
   state.pendingOpId = null;
-  if (state.opTimerId !== null) {
-    socket.clearTimeout(state.opTimerId);
-    state.opTimerId = null;
-  }
+  state.opSeq++;          // invalidates any pending per-op timeout for this op
   state.opCount++;
   if (state.opCount >= OPS_PER_ITERATION) {
     state.phase = 'done';
@@ -127,6 +124,8 @@ function failPendingOp(socket, docId, state) {
 function submitNext(socket, docId, state) {
   state.pendingOpId = uuidv4();
   state.t0 = Date.now();
+  state.opSeq++;
+  const seq = state.opSeq;   // captured by the timeout closure
   sockjsSend(socket, encodeStompFrame(
     'SEND',
     {
@@ -142,10 +141,10 @@ function submitNext(socket, docId, state) {
       payload: { path: [0], offset: 0, text: 'x' },
     })
   ));
-  // Per-op safety net: if the server sends no response within OP_TIMEOUT_MS
-  // (e.g. OperationConflictException with broken error routing), count as error.
-  state.opTimerId = socket.setTimeout(function() {
-    state.opTimerId = null;
+  // Per-op safety net: if the server sends no response within OP_TIMEOUT_MS,
+  // count as error. The seq check self-cancels if the op already resolved.
+  socket.setTimeout(function() {
+    if (state.opSeq !== seq) return;
     failPendingOp(socket, docId, state);
   }, OP_TIMEOUT_MS);
 }
@@ -162,7 +161,7 @@ export default function(data) {
     baseVersion: 0,
     t0: 0,
     pendingOpId: null,    // operationId of the in-flight op; null when idle
-    opTimerId: null,      // per-op timeout handle; cleared on confirmation or error
+    opSeq: 0,             // incremented on every submit; timeout uses closure to self-cancel
   };
 
   ws.connect(wsUrl, {}, function(socket) {
@@ -221,11 +220,8 @@ export default function(data) {
       // AcceptedOperationResponse.operationId is echoed back in the broadcast body.
       if (!state.pendingOpId || !msg.includes(state.pendingOpId)) return;
 
-      // Cancel the per-op safety-net timer now that confirmation arrived.
-      if (state.opTimerId !== null) {
-        socket.clearTimeout(state.opTimerId);
-        state.opTimerId = null;
-      }
+      // Increment opSeq to self-cancel the pending per-op timeout.
+      state.opSeq++;
 
       const latency = Date.now() - state.t0;
       operationLatency.add(latency);
