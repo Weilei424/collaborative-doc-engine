@@ -12,8 +12,9 @@ const STRESS_VUS  = parseInt(__ENV.K6_STRESS_VUS || '100');
 
 const OPS_PER_ITERATION  = 10;
 const THINK_TIME_MS      = 100;   // tighter than baseline to maximise lock contention
-const SESSION_TIMEOUT_MS = 60000; // 60 s — lock wait can spike under load
+const SESSION_TIMEOUT_MS = 60000; // 60 s — overall session safety net
 const SUB_READY_DELAY_MS = 200;
+const OP_TIMEOUT_MS      = 5000;  // per-op safety net: if the server sends nothing back
 
 // ---------- Custom metrics ----------
 const operationLatency   = new Trend('operation_latency', true);
@@ -103,6 +104,25 @@ export function setup() {
   return { jwt: jwt, docId: docRes.json('id') };
 }
 
+// ---------- Helper: handle a failed or timed-out op ----------
+function failPendingOp(socket, docId, state) {
+  if (!state.pendingOpId) return;
+  operationErrorRate.add(1);
+  state.pendingOpId = null;
+  if (state.opTimerId !== null) {
+    socket.clearTimeout(state.opTimerId);
+    state.opTimerId = null;
+  }
+  state.opCount++;
+  if (state.opCount >= OPS_PER_ITERATION) {
+    state.phase = 'done';
+    sockjsSend(socket, encodeStompFrame('DISCONNECT', {}, ''));
+    socket.close();
+  } else {
+    socket.setTimeout(function() { submitNext(socket, docId, state); }, THINK_TIME_MS);
+  }
+}
+
 // ---------- Helper: submit next INSERT_TEXT ----------
 function submitNext(socket, docId, state) {
   state.pendingOpId = uuidv4();
@@ -122,6 +142,12 @@ function submitNext(socket, docId, state) {
       payload: { path: [0], offset: 0, text: 'x' },
     })
   ));
+  // Per-op safety net: if the server sends no response within OP_TIMEOUT_MS
+  // (e.g. OperationConflictException with broken error routing), count as error.
+  state.opTimerId = socket.setTimeout(function() {
+    state.opTimerId = null;
+    failPendingOp(socket, docId, state);
+  }, OP_TIMEOUT_MS);
 }
 
 // ---------- VU default function ----------
@@ -136,6 +162,7 @@ export default function(data) {
     baseVersion: 0,
     t0: 0,
     pendingOpId: null,    // operationId of the in-flight op; null when idle
+    opTimerId: null,      // per-op timeout handle; cleared on confirmation or error
   };
 
   ws.connect(wsUrl, {}, function(socket) {
@@ -170,20 +197,9 @@ export default function(data) {
       if (state.phase !== 'operating') return;
 
       // Error from /user/queue/errors (e.g. OPERATION_CONFLICT after max CAS retries).
-      // Without this check the VU hangs until the 60 s session timeout fires.
-      if (msg.includes('"OPERATION_CONFLICT"') || msg.includes('"INVALID_OPERATION"')) {
-        if (state.pendingOpId) {
-          operationErrorRate.add(1);
-          state.pendingOpId = null;
-          state.opCount++;
-        }
-        if (state.opCount >= OPS_PER_ITERATION) {
-          state.phase = 'done';
-          sockjsSend(socket, encodeStompFrame('DISCONNECT', {}, ''));
-          socket.close();
-        } else {
-          socket.setTimeout(function() { submitNext(socket, docId, state); }, THINK_TIME_MS);
-        }
+      // SockJS JSON-encodes the STOMP frame, so quotes are escaped; match without them.
+      if (msg.includes('OPERATION_CONFLICT') || msg.includes('INVALID_OPERATION')) {
+        failPendingOp(socket, docId, state);
         return;
       }
 
@@ -204,6 +220,12 @@ export default function(data) {
       // Only record latency and advance the op counter when OUR op is confirmed.
       // AcceptedOperationResponse.operationId is echoed back in the broadcast body.
       if (!state.pendingOpId || !msg.includes(state.pendingOpId)) return;
+
+      // Cancel the per-op safety-net timer now that confirmation arrived.
+      if (state.opTimerId !== null) {
+        socket.clearTimeout(state.opTimerId);
+        state.opTimerId = null;
+      }
 
       const latency = Date.now() - state.t0;
       operationLatency.add(latency);
