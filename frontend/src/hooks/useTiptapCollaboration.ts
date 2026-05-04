@@ -158,7 +158,27 @@ export function useTiptapCollaboration({
     selfRef.current = onAcceptedOperation
   }, [onAcceptedOperation])
 
-  return { onTransaction, onAcceptedOperation }
+  const handleResyncRequired = useCallback(
+    async (operationId: string, _currentServerVersion: number) => {
+      try {
+        const ops = await fetchGapFill(documentId, currentVersion.current, token)
+        for (const op of ops) {
+          selfRef.current(op)
+        }
+      } catch (err) {
+        console.warn('[collab] Resync gap fill failed during RESYNC_REQUIRED handling:', err)
+      }
+
+      const entry = pendingOps.current.get(operationId)
+      if (entry) {
+        pendingOps.current.delete(operationId)
+        submitOperation({ ...entry.req, baseVersion: currentVersion.current })
+      }
+    },
+    [documentId, token, submitOperation],
+  )
+
+  return { onTransaction, onAcceptedOperation, handleResyncRequired }
 }
 
 // ─── Gap Fill ────────────────────────────────────────────────────────────────
