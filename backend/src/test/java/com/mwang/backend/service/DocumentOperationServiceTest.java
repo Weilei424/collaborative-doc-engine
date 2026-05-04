@@ -78,11 +78,13 @@ class DocumentOperationServiceTest {
                 .content("{\"children\":[]}").owner(actor).build();
         accessor = mock(SimpMessageHeaderAccessor.class);
 
+        DocumentOperationCommitter committer = new DocumentOperationCommitter(
+                documentRepository, operationRepository, objectMapper);
         service = new DocumentOperationServiceImpl(
                 documentRepository, operationRepository,
                 currentUserProvider, authorizationService,
                 transformer, objectMapper,
-                meterRegistry, treeCache, 5);
+                meterRegistry, treeCache, committer, 5);
     }
 
     private SimpMessageHeaderAccessor accessorWithSession(String sessionId) {
@@ -140,7 +142,7 @@ class DocumentOperationServiceTest {
         when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.empty());
-        when(documentRepository.findById(documentId)).thenReturn(Optional.empty());
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.submitOperation(documentId,
                 new SubmitOperationRequest(operationId, 0L, DocumentOperationType.INSERT_TEXT,
@@ -156,7 +158,7 @@ class DocumentOperationServiceTest {
         when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.empty());
-        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         org.mockito.Mockito.doThrow(new DocumentAccessDeniedException(documentId, actor.getId()))
                 .when(authorizationService).assertCanWrite(document, actor);
 
@@ -176,7 +178,7 @@ class DocumentOperationServiceTest {
         when(currentUserProvider.requireCurrentUser(acc)).thenReturn(actor);
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.empty());
-        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                 documentId, 0L)).thenReturn(List.of());
         DocumentNode node = DocumentNode.builder().type("paragraph").text("").build();
@@ -215,7 +217,7 @@ class DocumentOperationServiceTest {
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.empty());
         // Both read-snapshot calls return the same document (second attempt re-reads)
-        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                 documentId, 0L)).thenReturn(List.of());
         DocumentNode node = DocumentNode.builder().type("paragraph").text("").build();
@@ -250,7 +252,7 @@ class DocumentOperationServiceTest {
         when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.empty());
-        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                 documentId, 0L)).thenReturn(List.of());
         DocumentNode node = DocumentNode.builder().type("paragraph").text("").build();
@@ -283,7 +285,7 @@ class DocumentOperationServiceTest {
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.empty());
         // First read snapshot: no intervening ops (pre-loop didn't find it yet)
-        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         DocumentOperation alreadyAccepted = buildAccepted(1L);
         // First attempt: CAS returns 0 (miss)
         DocumentNode node = DocumentNode.builder().type("paragraph").text("").build();
@@ -321,7 +323,7 @@ class DocumentOperationServiceTest {
         when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.empty());
-        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                 documentId, 0L)).thenReturn(List.of());
         DocumentNode node = DocumentNode.builder().type("paragraph").text("").build();
@@ -358,7 +360,7 @@ class DocumentOperationServiceTest {
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.empty());
         // Attempt 1: CAS miss
-        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                 documentId, 0L)).thenReturn(List.of());
         DocumentNode node = DocumentNode.builder().type("paragraph").text("").build();
@@ -391,7 +393,7 @@ class DocumentOperationServiceTest {
         when(currentUserProvider.requireCurrentUser(accessor)).thenReturn(actor);
         when(operationRepository.findByDocumentIdAndOperationId(documentId, operationId))
                 .thenReturn(Optional.empty());
-        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                 documentId, 0L)).thenReturn(List.of(interveningOp));
         when(objectMapper.readTree(interveningOp.getPayload()))
@@ -437,7 +439,7 @@ class DocumentOperationServiceTest {
         when(currentUserProvider.requireCurrentUser(any(SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(operationRepository.findByDocumentIdAndOperationId(eq(documentId), eq(operationId)))
                 .thenReturn(Optional.empty());
-        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                 eq(documentId), anyLong())).thenReturn(List.of());
         when(objectMapper.readValue(anyString(), eq(DocumentTree.class))).thenReturn(emptyTree);
@@ -480,7 +482,7 @@ class DocumentOperationServiceTest {
         when(currentUserProvider.requireCurrentUser(any(SimpMessageHeaderAccessor.class))).thenReturn(actor);
         when(operationRepository.findByDocumentIdAndOperationId(eq(documentId), eq(operationId)))
                 .thenReturn(Optional.empty());
-        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findDetailedById(documentId)).thenReturn(Optional.of(document));
         when(operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                 eq(documentId), anyLong())).thenReturn(List.of(interveningOp));
         when(transformer.transform(any(), any(), any(), any())).thenReturn(Optional.of(payload));
@@ -507,11 +509,16 @@ class DocumentOperationServiceTest {
     @Test
     void constructor_registersRetriesAndResyncCounters_inPrometheusFormat() {
         PrometheusMeterRegistry prometheusRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        DocumentRepository mockRepo = mock(DocumentRepository.class);
+        DocumentOperationRepository mockOpRepo = mock(DocumentOperationRepository.class);
+        ObjectMapper mockMapper = mock(ObjectMapper.class);
+        DocumentOperationCommitter prometheusCommitter = new DocumentOperationCommitter(
+                mockRepo, mockOpRepo, mockMapper);
         new DocumentOperationServiceImpl(
-                mock(DocumentRepository.class), mock(DocumentOperationRepository.class),
+                mockRepo, mockOpRepo,
                 mock(CurrentUserProvider.class), mock(DocumentAuthorizationService.class),
-                mock(OperationTransformer.class), mock(ObjectMapper.class),
-                prometheusRegistry, mock(DocumentTreeCache.class), 5);
+                mock(OperationTransformer.class), mockMapper,
+                prometheusRegistry, mock(DocumentTreeCache.class), prometheusCommitter, 5);
 
         String scrape = prometheusRegistry.scrape();
         assertThat(scrape).doesNotContain("lockAcquisition");
