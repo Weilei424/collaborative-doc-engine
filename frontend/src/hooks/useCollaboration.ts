@@ -5,6 +5,7 @@ import type { StompSubscription } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
 import type {
   AcceptedOperationResponse,
+  OperationErrorPayload,
   PresenceEvent,
   SessionSnapshot,
   SubmitOperationRequest,
@@ -19,6 +20,7 @@ interface Options {
   onSession: (snapshot: SessionSnapshot) => void
   onPresence: (event: PresenceEvent) => void
   onAccessRevoked: () => void
+  onError: (payload: OperationErrorPayload) => void
 }
 
 export function useCollaboration({
@@ -30,6 +32,7 @@ export function useCollaboration({
   onSession,
   onPresence,
   onAccessRevoked,
+  onError,
 }: Options) {
   const clientRef = useRef<Client | null>(null)
   const [connected, setConnected] = useState(false)
@@ -77,6 +80,16 @@ export function useCollaboration({
             msg => onOperation(JSON.parse(msg.body)),
             { 'X-Last-Server-Version': String(lastServerVersionRef.current) },
           ),
+        )
+
+        subs.push(
+          client.subscribe(`/user/queue/errors.${documentId}`, msg => {
+            try {
+              onError(JSON.parse(msg.body))
+            } catch {
+              console.warn('[collab] Failed to parse error message:', msg.body)
+            }
+          }),
         )
 
         subs.push(
