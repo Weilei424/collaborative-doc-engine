@@ -76,7 +76,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     @Modifying
     @Query("""
             UPDATE Document d
-            SET d.currentVersion = :nextVersion, d.content = :content
+            SET d.currentVersion = :nextVersion, d.content = :content,
+                d.version = d.version + 1, d.updatedAt = CURRENT_TIMESTAMP
             WHERE d.id = :documentId AND d.currentVersion = :expectedVersion
             """)
     int tryAdvanceVersion(
