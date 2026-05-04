@@ -17,6 +17,7 @@ import com.mwang.backend.service.exception.DocumentNotFoundException;
 import com.mwang.backend.service.exception.IdempotentOperationException;
 import com.mwang.backend.service.exception.InvalidOperationException;
 import com.mwang.backend.service.exception.OperationConflictException;
+import com.mwang.backend.service.exception.StaleClientException;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.SubmitOperationRequest;
 import io.micrometer.core.instrument.Counter;
@@ -44,6 +45,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     private final DocumentTreeCache treeCache;
     private final DocumentOperationCommitter committer;
     private final int maxAttempts;
+    private final int staleCap;
 
     private final Counter idempotentCounter;
     private final Counter noopCounter;
@@ -66,7 +68,8 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             MeterRegistry meterRegistry,
             DocumentTreeCache treeCache,
             DocumentOperationCommitter committer,
-            @Value("${collaboration.cas.max-attempts:5}") int maxAttempts) {
+            @Value("${collaboration.cas.max-attempts:5}") int maxAttempts,
+            @Value("${collaboration.stale-cap:200}") int staleCap) {
         this.documentRepository = documentRepository;
         this.operationRepository = operationRepository;
         this.currentUserProvider = currentUserProvider;
@@ -77,6 +80,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         this.treeCache = treeCache;
         this.committer = committer;
         this.maxAttempts = maxAttempts;
+        this.staleCap = staleCap;
 
         this.idempotentCounter = meterRegistry.counter("operations.idempotent");
         this.noopCounter = meterRegistry.counter("operations.noop");
@@ -120,6 +124,12 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             Document document = loadDocumentTimer.record(() ->
                     documentRepository.findDetailedById(documentId)
                             .orElseThrow(() -> new DocumentNotFoundException(documentId)));
+
+            // Stale cap: reject clients whose baseVersion lags too far behind
+            if (document.getCurrentVersion() - request.baseVersion() > staleCap) {
+                operationsResyncRequiredCounter.increment();
+                throw new StaleClientException(request.operationId(), document.getCurrentVersion());
+            }
 
             List<DocumentOperation> intervening = loadInterveningOpsTimer.record(() ->
                     operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
