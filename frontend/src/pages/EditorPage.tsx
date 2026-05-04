@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { documentsApi } from '../api/documents'
 import type { Document } from '../types/document'
-import type { AcceptedOperationResponse, SessionSnapshot, SubmitOperationRequest } from '../types/collaboration'
+import type { AcceptedOperationResponse, OperationErrorPayload, SessionSnapshot, SubmitOperationRequest } from '../types/collaboration'
 import { useCollaboration } from '../hooks/useCollaboration'
 import { useTiptapCollaboration } from '../hooks/useTiptapCollaboration'
 import { AccessRevokedOverlay } from '../components/AccessRevokedOverlay'
@@ -77,7 +77,7 @@ export function EditorPage() {
   )
   const stableOnAccessRevoked = useCallback(() => onAccessRevokedRef.current(), [])
 
-  const { onTransaction, onAcceptedOperation } = useTiptapCollaboration({
+  const { onTransaction, onAcceptedOperation, handleResyncRequired } = useTiptapCollaboration({
     editor,
     documentId: documentId!,
     sessionId,
@@ -85,6 +85,15 @@ export function EditorPage() {
     submitOperation: stableSubmitOp,
     token,
   })
+
+  const stableOnError = useCallback(
+    (payload: OperationErrorPayload) => {
+      if (payload.error === 'RESYNC_REQUIRED') {
+        handleResyncRequired(payload.operationId, payload.currentServerVersion)
+      }
+    },
+    [handleResyncRequired],
+  )
 
   const { connected, submitOperation } = useCollaboration({
     documentId: documentId!,
@@ -95,6 +104,7 @@ export function EditorPage() {
     onSession: setSessionSnapshot,
     onPresence,
     onAccessRevoked: stableOnAccessRevoked,
+    onError: stableOnError,
   })
 
   // Keep refs in sync so stable wrappers always call the latest closures
