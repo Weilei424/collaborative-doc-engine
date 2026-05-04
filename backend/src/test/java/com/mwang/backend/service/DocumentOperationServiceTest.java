@@ -221,7 +221,7 @@ class DocumentOperationServiceTest {
         assertThat(response.operationId()).isEqualTo(operationId);
         assertThat(response.serverVersion()).isEqualTo(1L);
         assertThat(response.clientSessionId()).isEqualTo("sess-abc");
-        verify(operationRepository).save(any(DocumentOperation.class));
+        verify(operationRepository).saveAndFlush(any(DocumentOperation.class));
         verify(documentRepository, never()).save(any());
     }
 
@@ -436,7 +436,7 @@ class DocumentOperationServiceTest {
         assertThat(response.serverVersion()).isEqualTo(1L);
         org.mockito.ArgumentCaptor<DocumentOperation> captor =
                 org.mockito.ArgumentCaptor.forClass(DocumentOperation.class);
-        verify(operationRepository).save(captor.capture());
+        verify(operationRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getOperationType()).isEqualTo(DocumentOperationType.NO_OP);
         assertThat(document.getContent()).isEqualTo("{\"children\":[]}");
         verify(treeCache).put(documentId, 1L, cachedTree);
