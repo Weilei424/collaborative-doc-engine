@@ -9,9 +9,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.transaction.annotation.Transactional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 class DocumentRepositoryTest extends AbstractIntegrationTest {
@@ -54,6 +56,23 @@ class DocumentRepositoryTest extends AbstractIntegrationTest {
         Document updated = documentRepository.findById(document.getId()).orElseThrow();
         assertThat(updated.getCurrentVersion()).isEqualTo(1L);
         assertThat(updated.getContent()).contains("paragraph");
+    }
+
+    @Test
+    void tryAdvanceVersion_advancesJpaVersion_staleSave_throwsOptimisticLockException() {
+        // Capture the entity snapshot BEFORE the CAS commit (simulates a concurrent REST load)
+        Document staleSnapshot = documentRepository.findById(document.getId()).orElseThrow();
+
+        // CAS commit advances currentVersion AND the JPA @Version column
+        int rows = documentRepository.tryAdvanceVersion(
+                document.getId(), 0L, 1L, "{\"children\":[{\"type\":\"paragraph\"}]}");
+        assertThat(rows).isEqualTo(1);
+
+        // A stale REST save must fail — the @Version mismatch proves the JPA optimistic
+        // lock is not bypassed by the collaboration CAS update
+        staleSnapshot.setTitle("Stale REST update");
+        assertThatThrownBy(() -> documentRepository.saveAndFlush(staleSnapshot))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
     }
 
     @Test
