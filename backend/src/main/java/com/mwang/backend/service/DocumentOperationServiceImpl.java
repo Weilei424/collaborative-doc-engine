@@ -125,6 +125,10 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                     documentRepository.findDetailedById(documentId)
                             .orElseThrow(() -> new DocumentNotFoundException(documentId)));
 
+            // b. ACL check (not retried — revocation is final; checked before stale-cap so
+            //    unauthorized clients cannot observe the current version via RESYNC_REQUIRED)
+            authorizationService.assertCanWrite(document, actor);
+
             // Stale cap: reject clients whose baseVersion lags too far behind
             if (document.getCurrentVersion() - request.baseVersion() > staleCap) {
                 operationsResyncRequiredCounter.increment();
@@ -135,11 +139,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                     operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                             documentId, request.baseVersion()));
 
-            // b. ACL check (not retried — revocation is final; checked before idempotency
-            //    re-check so a revoked user cannot get a cached idempotent response)
-            authorizationService.assertCanWrite(document, actor);
-
-            // c. Idempotency re-check against fresh snapshot
+            // c. Idempotency re-check against fresh snapshot (after ACL)
             boolean alreadyAccepted = intervening.stream()
                     .anyMatch(op -> op.getOperationId().equals(request.operationId()));
             if (alreadyAccepted) {
