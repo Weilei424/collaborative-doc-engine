@@ -93,15 +93,11 @@ class StaleClientVersionCapTest extends AbstractIntegrationTest {
         JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         UUID opId = UUID.randomUUID();
 
-        // Should be accepted (may succeed or fail for other reasons, but not StaleClientException)
-        try {
-            AcceptedOperationResponse response = operationService.submitOperation(
-                    document.getId(),
-                    new SubmitOperationRequest(opId, 1L, DocumentOperationType.INSERT_TEXT, payload),
-                    mock(SimpMessageHeaderAccessor.class));
-            assertThat(response).isNotNull();
-        } catch (Exception e) {
-            assertThat(e).isNotInstanceOf(StaleClientException.class);
-        }
+        AcceptedOperationResponse response = operationService.submitOperation(
+                document.getId(),
+                new SubmitOperationRequest(opId, 1L, DocumentOperationType.INSERT_TEXT, payload),
+                mock(SimpMessageHeaderAccessor.class));
+        assertThat(response).isNotNull();
+        assertThat(response.operationId()).isEqualTo(opId);
     }
 }
