@@ -159,7 +159,7 @@ export function useTiptapCollaboration({
   }, [onAcceptedOperation])
 
   const handleResyncRequired = useCallback(
-    async (operationId: string, _currentServerVersion: number) => {
+    async (operationId: string, currentServerVersion: number) => {
       try {
         const ops = await fetchGapFill(documentId, currentVersion.current, token)
         for (const op of ops) {
@@ -167,12 +167,27 @@ export function useTiptapCollaboration({
         }
       } catch (err) {
         console.warn('[collab] Resync gap fill failed during RESYNC_REQUIRED handling:', err)
+        // Do not resubmit — we don't know the server state, so resubmitting with
+        // a stale baseVersion would likely trigger another RESYNC_REQUIRED loop.
+        return
+      }
+
+      if (currentVersion.current < currentServerVersion) {
+        console.warn(
+          '[collab] Gap fill did not reach server version', currentServerVersion,
+          '— at', currentVersion.current, '; skipping resubmit to avoid RESYNC loop',
+        )
+        return
       }
 
       const entry = pendingOps.current.get(operationId)
       if (entry) {
-        pendingOps.current.delete(operationId)
-        submitOperation({ ...entry.req, baseVersion: currentVersion.current })
+        // Update the stored entry's baseVersion and keep it in pendingOps.
+        // Deleting before the accepted echo arrives would cause the echo to be
+        // treated as a remote op, applying the content a second time.
+        const updatedReq = { ...entry.req, baseVersion: currentVersion.current }
+        pendingOps.current.set(operationId, { ...entry, req: updatedReq })
+        submitOperation(updatedReq)
       }
     },
     [documentId, token, submitOperation],
