@@ -12,7 +12,6 @@ import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.repositories.UserRepository;
 import com.mwang.backend.testcontainers.AbstractIntegrationTest;
-import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.SubmitOperationRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,11 +28,11 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -56,17 +55,12 @@ class DocumentOperationAdversarialTest extends AbstractIntegrationTest {
     void setUp() {
         String uid = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
         actor = userRepository.save(User.builder()
-                .username("adv-user-" + uid)
-                .email("adv-" + uid + "@test.com")
+                .username("adv-user-" + uid).email("adv-" + uid + "@test.com")
                 .passwordHash("hash").build());
-
         document = documentRepository.save(Document.builder()
                 .title("Adversarial Test Doc")
                 .content("{\"children\":[{\"type\":\"paragraph\",\"text\":\"\",\"children\":[]}]}")
-                .owner(actor)
-                .visibility(DocumentVisibility.PRIVATE)
-                .currentVersion(0L).build());
-
+                .owner(actor).visibility(DocumentVisibility.PRIVATE).currentVersion(0L).build());
         when(currentUserProvider.requireCurrentUser(any(SimpMessageHeaderAccessor.class))).thenReturn(actor);
     }
 
@@ -80,39 +74,41 @@ class DocumentOperationAdversarialTest extends AbstractIntegrationTest {
     @Test
     void twentySubmitters_oneThousandOps_allAccepted_versionsContiguous() throws Exception {
         int submitters = 20;
-        int opsPerSubmitter = 50; // 20 * 50 = 1000 total ops
+        int opsPerSubmitter = 50;
         int totalOps = submitters * opsPerSubmitter;
 
         CountDownLatch startLatch = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(submitters);
-        List<Future<List<AcceptedOperationResponse>>> futures = new ArrayList<>();
         List<Exception> errors = Collections.synchronizedList(new ArrayList<>());
 
         SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
         when(accessor.getSessionId()).thenReturn("adversarial-session");
+        when(accessor.getUser()).thenReturn(() -> "adv-user");
 
         for (int s = 0; s < submitters; s++) {
             final int submitterIdx = s;
-            futures.add(executor.submit(() -> {
-                startLatch.await();
-                List<AcceptedOperationResponse> responses = new ArrayList<>();
-                for (int i = 0; i < opsPerSubmitter; i++) {
-                    try {
-                        JsonNode payload = mapper.readTree(
-                                "{\"path\":[0],\"offset\":" + (submitterIdx * opsPerSubmitter + i)
-                                        + ",\"text\":\"x\"}");
-                        AcceptedOperationResponse resp = operationService.submitOperation(
-                                document.getId(),
-                                new SubmitOperationRequest(UUID.randomUUID(), 0L,
-                                        DocumentOperationType.INSERT_TEXT, payload),
-                                accessor);
-                        responses.add(resp);
-                    } catch (Exception e) {
-                        errors.add(e);
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    for (int i = 0; i < opsPerSubmitter; i++) {
+                        try {
+                            JsonNode payload = mapper.readTree(
+                                    "{\"path\":[0],\"offset\":"
+                                            + (submitterIdx * opsPerSubmitter + i)
+                                            + ",\"text\":\"x\"}");
+                            operationService.submitOperation(
+                                    document.getId(),
+                                    new SubmitOperationRequest(UUID.randomUUID(), 0L,
+                                            DocumentOperationType.INSERT_TEXT, payload),
+                                    accessor);
+                        } catch (Exception e) {
+                            errors.add(e);
+                        }
                     }
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
                 }
-                return responses;
-            }));
+            });
         }
 
         startLatch.countDown();
@@ -120,43 +116,30 @@ class DocumentOperationAdversarialTest extends AbstractIntegrationTest {
         assertThat(executor.awaitTermination(120, TimeUnit.SECONDS)).isTrue();
         assertThat(errors).isEmpty();
 
-        // Collect all accepted responses
-        List<AcceptedOperationResponse> allResponses = new ArrayList<>();
-        for (Future<List<AcceptedOperationResponse>> f : futures) {
-            allResponses.addAll(f.get());
-        }
+        // Wait for batcher to drain all ops
+        await().atMost(30, TimeUnit.SECONDS)
+               .until(() -> operationRepository
+                       .findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
+                               document.getId(), 0L)
+                       .size() >= totalOps);
 
-        // All 1000 ops accepted (no silent drops)
-        assertThat(allResponses).hasSize(totalOps);
-
-        // No duplicate server versions in responses
-        long distinctVersions = allResponses.stream()
-                .map(AcceptedOperationResponse::serverVersion)
-                .distinct().count();
-        assertThat(distinctVersions).isEqualTo(totalOps);
-
-        // Versions are contiguous 1..totalOps
-        List<Long> sortedVersions = allResponses.stream()
-                .map(AcceptedOperationResponse::serverVersion)
-                .sorted().toList();
-        List<Long> expected = LongStream.rangeClosed(1, totalOps).boxed().toList();
-        assertThat(sortedVersions).isEqualTo(expected);
-
-        // DB has exactly 1000 rows for this document
         List<DocumentOperation> dbOps = operationRepository
                 .findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                         document.getId(), 0L);
         assertThat(dbOps).hasSize(totalOps);
 
-        // No duplicate server_version in DB
-        long distinctDbVersions = dbOps.stream().map(DocumentOperation::getServerVersion).distinct().count();
-        assertThat(distinctDbVersions).isEqualTo(totalOps);
+        long distinctVersions = dbOps.stream()
+                .map(DocumentOperation::getServerVersion).distinct().count();
+        assertThat(distinctVersions).isEqualTo(totalOps);
 
-        // Final document currentVersion matches
+        List<Long> sortedVersions = dbOps.stream()
+                .map(DocumentOperation::getServerVersion).sorted().toList();
+        List<Long> expected = LongStream.rangeClosed(1, totalOps).boxed().toList();
+        assertThat(sortedVersions).isEqualTo(expected);
+
         Document finalDoc = documentRepository.findById(document.getId()).orElseThrow();
         assertThat(finalDoc.getCurrentVersion()).isEqualTo(totalOps);
 
-        // Final materialized content matches replay from operation log
         DocumentTree replayTree = mapper.readValue(document.getContent(), DocumentTree.class);
         for (DocumentOperation op : dbOps) {
             if (op.getOperationType() != DocumentOperationType.NO_OP) {
