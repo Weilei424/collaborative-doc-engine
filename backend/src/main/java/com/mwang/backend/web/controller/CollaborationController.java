@@ -1,13 +1,11 @@
 package com.mwang.backend.web.controller;
 
-import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.service.CollaborationBroadcastService;
 import com.mwang.backend.service.CollaborationPresenceService;
 import com.mwang.backend.service.CollaborationSessionService;
 import com.mwang.backend.service.DocumentOperationService;
 import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
 import com.mwang.backend.service.exception.StaleClientException;
-import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.OperationErrorResponse;
 import com.mwang.backend.web.model.LeaveSessionRequest;
 import com.mwang.backend.web.model.PresenceUpdateRequest;
@@ -31,7 +29,6 @@ public class CollaborationController {
     private final CollaborationPresenceService collaborationPresenceService;
     private final CollaborationBroadcastService collaborationBroadcastService;
     private final DocumentOperationService documentOperationService;
-    private final RedisCollaborationEventPublisher redisCollaborationEventPublisher;
 
     @MessageMapping("/documents/{documentId}/sessions.join")
     public void joinSession(
@@ -70,9 +67,7 @@ public class CollaborationController {
             @DestinationVariable UUID documentId,
             @Payload SubmitOperationRequest request,
             SimpMessageHeaderAccessor headerAccessor) {
-        AcceptedOperationResponse response = documentOperationService.submitOperation(documentId, request, headerAccessor);
-        collaborationBroadcastService.broadcastAcceptedOperation(documentId, response);
-        redisCollaborationEventPublisher.publishAcceptedOperation(documentId, response);
+        documentOperationService.submitOperation(documentId, request, headerAccessor);
     }
 
     private UUID requireSessionId(LeaveSessionRequest request) {
