@@ -1,5 +1,6 @@
 package com.mwang.backend.domain.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -23,6 +24,7 @@ public class DocumentNode {
     private List<InlineFormat> formats = new ArrayList<>();
     private List<DocumentNode> children;
 
+    @JsonIgnore
     public boolean isLeaf() {
         return children == null || children.isEmpty();
     }
