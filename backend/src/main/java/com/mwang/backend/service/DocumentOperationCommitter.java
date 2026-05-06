@@ -16,6 +16,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import com.mwang.backend.service.BatchedOpData;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 public class DocumentOperationCommitter {
@@ -68,6 +71,34 @@ public class DocumentOperationCommitter {
             }
             throw e;
         }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public List<DocumentOperation> commitBatch(
+            UUID documentId, long expectedVersion, long finalVersion,
+            String finalContent, Document document, List<BatchedOpData> ops) {
+
+        int rows = documentRepository.tryAdvanceVersion(
+                documentId, expectedVersion, finalVersion, finalContent);
+        if (rows == 0) {
+            throw new CasMissException();
+        }
+
+        List<DocumentOperation> results = new ArrayList<>();
+        for (BatchedOpData opData : ops) {
+            DocumentOperation op = DocumentOperation.builder()
+                    .document(document)
+                    .actor(opData.actor())
+                    .operationId(opData.operationId())
+                    .clientSessionId(opData.clientSessionId())
+                    .baseVersion(opData.baseVersion())
+                    .serverVersion(opData.serverVersion())
+                    .operationType(opData.operationType())
+                    .payload(payloadString(opData.payload()))
+                    .build();
+            results.add(operationRepository.saveAndFlush(op));
+        }
+        return results;
     }
 
     private String payloadString(JsonNode payload) {
