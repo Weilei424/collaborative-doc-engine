@@ -2,33 +2,23 @@ package com.mwang.backend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mwang.backend.collaboration.DocumentTreeCache;
-import com.mwang.backend.collaboration.OperationTransformer;
-import com.mwang.backend.collaboration.ParsedAcceptedOp;
+import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentOperation;
 import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.domain.User;
-import com.mwang.backend.domain.model.DocumentTree;
 import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
-import com.mwang.backend.service.exception.CasMissException;
 import com.mwang.backend.service.exception.DocumentNotFoundException;
-import com.mwang.backend.service.exception.IdempotentOperationException;
 import com.mwang.backend.service.exception.InvalidOperationException;
-import com.mwang.backend.service.exception.OperationConflictException;
-import com.mwang.backend.service.exception.StaleClientException;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.SubmitOperationRequest;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,71 +29,40 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     private final DocumentOperationRepository operationRepository;
     private final CurrentUserProvider currentUserProvider;
     private final DocumentAuthorizationService authorizationService;
-    private final OperationTransformer transformer;
+    private final DocumentOperationBatcher batcher;
+    private final CollaborationBroadcastService broadcastService;
+    private final RedisCollaborationEventPublisher redisPublisher;
     private final ObjectMapper objectMapper;
-    private final MeterRegistry meterRegistry;
-    private final DocumentTreeCache treeCache;
-    private final DocumentOperationCommitter committer;
-    private final int maxAttempts;
-    private final int staleCap;
-
     private final Counter idempotentCounter;
-    private final Counter noopCounter;
-    private final Counter conflictedCounter;
-    private final Counter operationsResyncRequiredCounter;
-    private final Timer loadDocumentTimer;
-    private final Timer loadInterveningOpsTimer;
-    private final Timer otTransformLoopTimer;
-    private final Timer perOpJsonParseTimer;
-    private final Timer treeApplyTimer;
-    private final Timer persistOperationTimer;
 
     public DocumentOperationServiceImpl(
             DocumentRepository documentRepository,
             DocumentOperationRepository operationRepository,
             CurrentUserProvider currentUserProvider,
             DocumentAuthorizationService authorizationService,
-            OperationTransformer transformer,
+            DocumentOperationBatcher batcher,
+            CollaborationBroadcastService broadcastService,
+            RedisCollaborationEventPublisher redisPublisher,
             ObjectMapper objectMapper,
-            MeterRegistry meterRegistry,
-            DocumentTreeCache treeCache,
-            DocumentOperationCommitter committer,
-            @Value("${collaboration.cas.max-attempts:5}") int maxAttempts,
-            @Value("${collaboration.stale-cap:200}") int staleCap) {
+            MeterRegistry meterRegistry) {
         this.documentRepository = documentRepository;
         this.operationRepository = operationRepository;
         this.currentUserProvider = currentUserProvider;
         this.authorizationService = authorizationService;
-        this.transformer = transformer;
+        this.batcher = batcher;
+        this.broadcastService = broadcastService;
+        this.redisPublisher = redisPublisher;
         this.objectMapper = objectMapper;
-        this.meterRegistry = meterRegistry;
-        this.treeCache = treeCache;
-        this.committer = committer;
-        this.maxAttempts = maxAttempts;
-        this.staleCap = staleCap;
-
         this.idempotentCounter = meterRegistry.counter("operations.idempotent");
-        this.noopCounter = meterRegistry.counter("operations.noop");
-        this.conflictedCounter = meterRegistry.counter("operations.conflicted");
-        this.operationsResyncRequiredCounter = meterRegistry.counter("operations.resync_required");
-        this.loadDocumentTimer = Timer.builder("loadDocument").register(meterRegistry);
-        this.loadInterveningOpsTimer = Timer.builder("loadInterveningOps").register(meterRegistry);
-        this.otTransformLoopTimer = Timer.builder("otTransformLoop").register(meterRegistry);
-        this.perOpJsonParseTimer = Timer.builder("perOpJsonParse").register(meterRegistry);
-        this.treeApplyTimer = Timer.builder("treeApply").register(meterRegistry);
-        this.persistOperationTimer = Timer.builder("persistOperation").register(meterRegistry);
     }
 
     @Override
-    public AcceptedOperationResponse submitOperation(
+    public void submitOperation(
             UUID documentId, SubmitOperationRequest request, SimpMessageHeaderAccessor headerAccessor) {
 
-        // Phase 1 — Validate (no DB)
         User actor = currentUserProvider.requireCurrentUser(headerAccessor);
         validatePayload(request.operationType(), request.payload());
 
-        // Pre-loop idempotency fast path — ACL checked even on replay to prevent
-        // unauthorized resubmission causing duplicate fanout after permission revocation
         Optional<DocumentOperation> priorOpt =
                 operationRepository.findByDocumentIdAndOperationId(documentId, request.operationId());
         if (priorOpt.isPresent()) {
@@ -111,160 +70,18 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                     .orElseThrow(() -> new DocumentNotFoundException(documentId));
             authorizationService.assertCanWrite(aclDoc, actor);
             idempotentCounter.increment();
-            return toResponse(priorOpt.get(), documentId);
+            AcceptedOperationResponse response = toResponse(priorOpt.get(), documentId);
+            broadcastService.broadcastAcceptedOperation(documentId, response);
+            redisPublisher.publishAcceptedOperation(documentId, response);
+            return;
         }
 
         String clientSessionId = headerAccessor != null && headerAccessor.getSessionId() != null
                 ? headerAccessor.getSessionId() : "";
+        String principalName = headerAccessor != null && headerAccessor.getUser() != null
+                ? headerAccessor.getUser().getName() : "";
 
-        // Phase 2 — Retry loop
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-
-            // a. Read snapshot (no lock); eager-load owner + collaborators for ACL check
-            Document document = loadDocumentTimer.record(() ->
-                    documentRepository.findDetailedById(documentId)
-                            .orElseThrow(() -> new DocumentNotFoundException(documentId)));
-
-            // b. ACL check (not retried — revocation is final; checked before stale-cap so
-            //    unauthorized clients cannot observe the current version via RESYNC_REQUIRED)
-            authorizationService.assertCanWrite(document, actor);
-
-            // Stale cap: reject clients whose baseVersion lags too far behind
-            if (document.getCurrentVersion() - request.baseVersion() > staleCap) {
-                operationsResyncRequiredCounter.increment();
-                throw new StaleClientException(request.operationId(), document.getCurrentVersion());
-            }
-
-            List<DocumentOperation> intervening = loadInterveningOpsTimer.record(() ->
-                    operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
-                            documentId, request.baseVersion()));
-
-            // c. Idempotency re-check against fresh snapshot (after ACL)
-            boolean alreadyAccepted = intervening.stream()
-                    .anyMatch(op -> op.getOperationId().equals(request.operationId()));
-            if (alreadyAccepted) {
-                idempotentCounter.increment();
-                DocumentOperation acceptedOp = intervening.stream()
-                        .filter(op -> op.getOperationId().equals(request.operationId()))
-                        .findFirst().orElseThrow();
-                return toResponse(acceptedOp, documentId);
-            }
-
-            if (!intervening.isEmpty()) {
-                conflictedCounter.increment();
-            }
-
-            // d. Speculative transform (outside transaction)
-            long parseStart = System.nanoTime();
-            List<ParsedAcceptedOp> parsed;
-            try {
-                parsed = intervening.stream()
-                        .map(op -> {
-                            try {
-                                return new ParsedAcceptedOp(op.getOperationType(),
-                                        objectMapper.readTree(op.getPayload()));
-                            } catch (Exception e) {
-                                throw new IllegalStateException(
-                                        "Failed to deserialize accepted operation payload", e);
-                            }
-                        })
-                        .toList();
-            } finally {
-                perOpJsonParseTimer.record(System.nanoTime() - parseStart,
-                        java.util.concurrent.TimeUnit.NANOSECONDS);
-            }
-
-            DocumentOperationType currentType = request.operationType();
-            JsonNode currentPayload = request.payload();
-            long loopStart = System.nanoTime();
-            try {
-                for (ParsedAcceptedOp accepted : parsed) {
-                    Optional<JsonNode> transformed = transformer.transform(
-                            currentType, currentPayload, accepted.type(), accepted.payload());
-                    if (transformed.isEmpty()) {
-                        noopCounter.increment();
-                        currentType = DocumentOperationType.NO_OP;
-                        currentPayload = objectMapper.createObjectNode();
-                        break;
-                    }
-                    currentPayload = transformed.get();
-                }
-            } finally {
-                otTransformLoopTimer.record(System.nanoTime() - loopStart,
-                        java.util.concurrent.TimeUnit.NANOSECONDS);
-            }
-
-            long expectedVersion = document.getCurrentVersion();
-            long nextVersion = expectedVersion + 1;
-            final DocumentOperationType finalType = currentType;
-            final JsonNode finalPayload = currentPayload;
-
-            long treeStart = System.nanoTime();
-            String serializedContent;
-            DocumentTree tree;
-            try {
-                final Document doc = document;
-                tree = treeCache.get(documentId, expectedVersion)
-                        .orElseGet(() -> {
-                            try {
-                                return objectMapper.readValue(doc.getContent(), DocumentTree.class);
-                            } catch (Exception e) {
-                                throw new IllegalStateException(
-                                        "Failed to deserialize document tree from content", e);
-                            }
-                        });
-                JsonNode enrichedPayload = finalPayload;
-                if (finalType != DocumentOperationType.NO_OP) {
-                    enrichedPayload = tree.applyOperation(finalType, finalPayload);
-                    currentPayload = enrichedPayload;
-                }
-                serializedContent = objectMapper.writeValueAsString(tree);
-            } catch (Exception e) {
-                throw new InvalidOperationException(
-                        "Failed to apply operation to document: " + e.getMessage(), e);
-            } finally {
-                treeApplyTimer.record(System.nanoTime() - treeStart,
-                        java.util.concurrent.TimeUnit.NANOSECONDS);
-            }
-
-            // e. CAS commit
-            final DocumentOperationType committedType = currentType;
-            final JsonNode committedPayload = currentPayload;
-            final long committedNextVersion = nextVersion;
-            final String committedContent = serializedContent;
-            final Document committedDocument = document;
-            final DocumentTree committedTree = tree;
-
-            try {
-                DocumentOperation accepted = persistOperationTimer.record(() ->
-                        committer.commit(documentId, expectedVersion, committedNextVersion,
-                                committedContent, committedDocument, actor,
-                                request.operationId(), clientSessionId,
-                                request.baseVersion(), committedType, committedPayload));
-
-                // Update cache only after the CAS commit succeeds
-                treeCache.put(documentId, committedNextVersion, committedTree);
-                treeCache.evict(documentId, expectedVersion);
-
-                meterRegistry.counter("operations.accepted", "type", committedType.name()).increment();
-                return toResponse(accepted, documentId);
-
-            } catch (CasMissException e) {
-                meterRegistry.counter("operations.retries", "attempt", String.valueOf(attempt)).increment();
-                // continue to next attempt
-
-            } catch (IdempotentOperationException e) {
-                idempotentCounter.increment();
-                DocumentOperation acceptedOp = operationRepository
-                        .findByDocumentIdAndOperationId(documentId, e.getOperationId())
-                        .orElseThrow(() -> new IllegalStateException(
-                                "Idempotent op not found after constraint violation: " + e.getOperationId()));
-                return toResponse(acceptedOp, documentId);
-            }
-        }
-
-        throw new OperationConflictException(
-                "Operation could not be committed after " + maxAttempts + " attempts for document " + documentId);
+        batcher.enqueue(new PendingOperation(documentId, request, actor, clientSessionId, principalName));
     }
 
     private void validatePayload(DocumentOperationType type, JsonNode payload) {
@@ -323,5 +140,4 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                 op.getOperationType(), payload, op.getActor().getId(),
                 op.getClientSessionId(), op.getCreatedAt() != null ? op.getCreatedAt() : Instant.now());
     }
-
 }
