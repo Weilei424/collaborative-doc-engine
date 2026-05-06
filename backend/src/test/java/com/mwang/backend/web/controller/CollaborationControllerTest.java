@@ -1,13 +1,11 @@
 package com.mwang.backend.web.controller;
 
-import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.service.CollaborationBroadcastService;
 import com.mwang.backend.service.CollaborationPresenceService;
 import com.mwang.backend.service.CollaborationSessionService;
 import com.mwang.backend.service.DocumentOperationService;
 import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
-import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.CollaborationSessionResponse;
 import com.mwang.backend.web.model.CollaborationSessionSnapshot;
 import com.mwang.backend.web.model.LeaveSessionRequest;
@@ -42,7 +40,6 @@ class CollaborationControllerTest {
     private CollaborationPresenceService presenceService;
     private CollaborationBroadcastService broadcastService;
     private DocumentOperationService documentOperationService;
-    private RedisCollaborationEventPublisher redisPublisher;
 
     @BeforeEach
     void setUp() {
@@ -50,9 +47,8 @@ class CollaborationControllerTest {
         presenceService = mock(CollaborationPresenceService.class);
         broadcastService = mock(CollaborationBroadcastService.class);
         documentOperationService = mock(DocumentOperationService.class);
-        redisPublisher = mock(RedisCollaborationEventPublisher.class);
         collaborationController = new CollaborationController(
-                sessionService, presenceService, broadcastService, documentOperationService, redisPublisher);
+                sessionService, presenceService, broadcastService, documentOperationService);
     }
 
     @Test
@@ -134,24 +130,18 @@ class CollaborationControllerTest {
     }
 
     @Test
-    void submitOperationBroadcastsLocallyAndPublishesToRedis() {
+    void submitOperationDelegatesToService() {
         UUID documentId = UUID.randomUUID();
-        AcceptedOperationResponse response = new AcceptedOperationResponse(
-                UUID.randomUUID(), documentId, 1L,
-                DocumentOperationType.INSERT_TEXT, null,
-                UUID.randomUUID(), "session-1", Instant.now()
-        );
         SubmitOperationRequest request = new SubmitOperationRequest(
                 UUID.randomUUID(), 0L,
                 DocumentOperationType.INSERT_TEXT, null
         );
         StompHeaderAccessor headerAccessor = accessor();
-        when(documentOperationService.submitOperation(eq(documentId), eq(request), any())).thenReturn(response);
 
         collaborationController.submitOperation(documentId, request, headerAccessor);
 
-        verify(broadcastService).broadcastAcceptedOperation(documentId, response);
-        verify(redisPublisher).publishAcceptedOperation(documentId, response);
+        verify(documentOperationService).submitOperation(eq(documentId), eq(request), any());
+        verifyNoInteractions(broadcastService);
     }
 
     private StompHeaderAccessor accessor() {
