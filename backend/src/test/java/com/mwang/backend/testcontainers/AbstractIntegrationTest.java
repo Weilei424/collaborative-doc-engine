@@ -6,15 +6,14 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-@Testcontainers(disabledWithoutDocker = true)
 @ActiveProfiles("test")
 public abstract class AbstractIntegrationTest {
 
-    @Container
+    // Singleton containers: started once for the entire test suite via static initializer,
+    // never restarted between test classes. Testcontainers registers a Ryuk shutdown hook
+    // so they are stopped automatically at JVM exit.
     protected static final PostgreSQLContainer<?> POSTGRES =
             new PostgreSQLContainer<>(DockerImageName.parse("postgres:15"))
                     .withDatabaseName("collabdb_test")
@@ -22,14 +21,18 @@ public abstract class AbstractIntegrationTest {
                     .withPassword("collabpass");
 
     @SuppressWarnings("resource")
-    @Container
     protected static final GenericContainer<?> REDIS =
             new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
                     .withExposedPorts(6379);
 
-    @Container
     protected static final KafkaContainer KAFKA =
             new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.0"));
+
+    static {
+        POSTGRES.start();
+        REDIS.start();
+        KAFKA.start();
+    }
 
     @DynamicPropertySource
     static void overrideProperties(DynamicPropertyRegistry registry) {
