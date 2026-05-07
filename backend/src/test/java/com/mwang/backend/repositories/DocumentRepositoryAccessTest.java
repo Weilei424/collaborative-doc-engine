@@ -72,20 +72,20 @@ class DocumentRepositoryAccessTest extends AbstractRepositoryTest {
                 .permission(DocumentPermission.WRITE)
                 .build());
 
-        assertThat(documentRepository.findOwnedByUserId(owner.getId(), "spec", PageRequest.of(0, 20)).getContent())
+        assertThat(documentRepository.findOwnedByUserId(owner.getId(), "%spec%", PageRequest.of(0, 20)).getContent())
                 .extracting(Document::getId)
                 .containsExactlyInAnyOrder(ownedMatch.getId(), sharedMatch.getId(), publicMatch.getId());
 
 
-        assertThat(documentRepository.findSharedWithUserId(collaborator.getId(), "spec", PageRequest.of(0, 20)).getContent())
+        assertThat(documentRepository.findSharedWithUserId(collaborator.getId(), "%spec%", PageRequest.of(0, 20)).getContent())
                 .extracting(Document::getId)
                 .containsExactly(sharedMatch.getId());
 
-        assertThat(documentRepository.findPublicDocuments("spec", PageRequest.of(0, 20)).getContent())
+        assertThat(documentRepository.findPublicDocuments("%spec%", PageRequest.of(0, 20)).getContent())
                 .extracting(Document::getId)
                 .containsExactly(publicMatch.getId());
 
-        assertThat(documentRepository.findAccessibleByUserId(collaborator.getId(), "spec", PageRequest.of(0, 20)).getContent())
+        assertThat(documentRepository.findAccessibleByUserId(collaborator.getId(), "%spec%", PageRequest.of(0, 20)).getContent())
                 .extracting(Document::getId)
                 .containsExactlyInAnyOrder(sharedMatch.getId(), publicMatch.getId());
     }
