@@ -131,6 +131,11 @@ public class DocumentOperationBatcher {
 
         batchSizeSummary.record(batch.size());
         processBatch(documentId, batch);
+
+        // If more ops arrived (or were pre-queued beyond maxBatchSize), schedule a follow-up drain.
+        if (!queue.isEmpty() && flag != null && flag.compareAndSet(false, true)) {
+            scheduler.schedule(() -> drain(documentId), windowMs, TimeUnit.MILLISECONDS);
+        }
     }
 
     private void processBatch(UUID documentId, List<PendingOperation> batch) {
