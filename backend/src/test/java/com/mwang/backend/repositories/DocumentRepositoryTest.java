@@ -50,10 +50,11 @@ class DocumentRepositoryTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @Transactional
     void tryAdvanceVersion_correctExpected_returnsOneAndUpdatesDocument() {
-        int rows = documentRepository.tryAdvanceVersion(
-                document.getId(), 0L, 1L, "{\"children\":[{\"type\":\"paragraph\"}]}");
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        int rows = tx.execute(status ->
+                documentRepository.tryAdvanceVersion(
+                        document.getId(), 0L, 1L, "{\"children\":[{\"type\":\"paragraph\"}]}"));
 
         assertThat(rows).isEqualTo(1);
         Document updated = documentRepository.findById(document.getId()).orElseThrow();
@@ -82,14 +83,16 @@ class DocumentRepositoryTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @Transactional
     void tryAdvanceVersion_staleExpected_returnsZeroAndLeavesDocumentUnchanged() {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
         // Advance manually first so currentVersion is 1
-        documentRepository.tryAdvanceVersion(document.getId(), 0L, 1L, "{\"children\":[]}");
+        tx.execute(status ->
+                documentRepository.tryAdvanceVersion(document.getId(), 0L, 1L, "{\"children\":[]}"));
 
-        // Now try with stale expected=0 again
-        int rows = documentRepository.tryAdvanceVersion(
-                document.getId(), 0L, 1L, "{\"children\":[{\"type\":\"new\"}]}");
+        // Now try with stale expected=0 again (document is now at version 1)
+        int rows = tx.execute(status ->
+                documentRepository.tryAdvanceVersion(
+                        document.getId(), 0L, 1L, "{\"children\":[{\"type\":\"new\"}]}"));
 
         assertThat(rows).isEqualTo(0);
         Document unchanged = documentRepository.findById(document.getId()).orElseThrow();
