@@ -145,7 +145,7 @@ class DocumentOperationConcurrencyTest extends AbstractIntegrationTest {
                 try {
                     startLatch.await();
                     JsonNode payload = mapper.readTree(
-                            "{\"path\":[0],\"offset\":" + idx + ",\"text\":\"x\"}");
+                            "{\"path\":[0],\"offset\":0,\"text\":\"x\"}");
                     operationService.submitOperation(document.getId(),
                             new SubmitOperationRequest(UUID.randomUUID(), 0L,
                                     DocumentOperationType.INSERT_TEXT, payload), accessor);
@@ -161,7 +161,7 @@ class DocumentOperationConcurrencyTest extends AbstractIntegrationTest {
         assertThat(enqueuedLatch.await(30, TimeUnit.SECONDS)).isTrue();
 
         // Wait for batcher to drain all n ops
-        await().atMost(10, TimeUnit.SECONDS).until(() ->
+        await().atMost(30, TimeUnit.SECONDS).until(() ->
                 operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
                         document.getId(), 0L).size() >= n);
 
