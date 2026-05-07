@@ -6,6 +6,7 @@ import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
@@ -20,13 +21,16 @@ public class KafkaOperationNotificationConsumer {
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
     private final RedisCollaborationEventPublisher collaborationEventPublisher;
+    private final String consumerGroupId;
 
     public KafkaOperationNotificationConsumer(ObjectMapper objectMapper,
                                                StringRedisTemplate redisTemplate,
-                                               RedisCollaborationEventPublisher collaborationEventPublisher) {
+                                               RedisCollaborationEventPublisher collaborationEventPublisher,
+                                               @Value("${kafka.consumer.group-id.notification:notification-consumer-group}") String consumerGroupId) {
         this.objectMapper = objectMapper;
         this.redisTemplate = redisTemplate;
         this.collaborationEventPublisher = collaborationEventPublisher;
+        this.consumerGroupId = consumerGroupId;
     }
 
     @KafkaListener(
@@ -36,7 +40,7 @@ public class KafkaOperationNotificationConsumer {
     public void onAcceptedOperation(String message) throws JsonProcessingException {
         KafkaAcceptedOperationEvent event = objectMapper.readValue(message, KafkaAcceptedOperationEvent.class);
 
-        String dedupKey = "dedup:op:" + event.operationId();
+        String dedupKey = "dedup:" + consumerGroupId + ":op:" + event.operationId();
         try {
             Boolean isNew = redisTemplate.opsForValue()
                     .setIfAbsent(dedupKey, "1", Duration.ofMinutes(5));
