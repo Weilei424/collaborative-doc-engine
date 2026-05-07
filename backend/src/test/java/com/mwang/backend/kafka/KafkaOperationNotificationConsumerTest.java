@@ -36,7 +36,7 @@ class KafkaOperationNotificationConsumerTest {
         valueOps = mock(ValueOperations.class);
         eventPublisher = mock(RedisCollaborationEventPublisher.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        consumer = new KafkaOperationNotificationConsumer(objectMapper, redisTemplate, eventPublisher);
+        consumer = new KafkaOperationNotificationConsumer(objectMapper, redisTemplate, eventPublisher, "test-group");
     }
 
     private String buildMessage(UUID operationId) throws JsonProcessingException {
@@ -80,7 +80,7 @@ class KafkaOperationNotificationConsumerTest {
         consumer.onAcceptedOperation(buildMessage(operationId));
 
         verify(valueOps).setIfAbsent(
-                eq("dedup:op:" + operationId),
+                eq("dedup:test-group:op:" + operationId),
                 eq("1"),
                 eq(Duration.ofMinutes(5)));
     }
