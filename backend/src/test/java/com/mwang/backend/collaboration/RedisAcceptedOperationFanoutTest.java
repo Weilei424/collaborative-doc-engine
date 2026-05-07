@@ -3,21 +3,20 @@ package com.mwang.backend.collaboration;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.service.CollaborationBroadcastService;
+import com.mwang.backend.testcontainers.AbstractIntegrationTest;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import com.fasterxml.jackson.databind.node.NullNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -27,18 +26,23 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @SpringBootTest
-@ActiveProfiles("test")
-@Testcontainers(disabledWithoutDocker = true)
-class RedisAcceptedOperationFanoutTest {
+class RedisAcceptedOperationFanoutTest extends AbstractIntegrationTest {
 
-    @Container
-    static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
-            .withExposedPorts(6379);
+    // Dedicated Redis container so batcher pub/sub messages from other contexts
+    // don't interfere with the pub/sub assertions in this test.
+    @SuppressWarnings("resource")
+    private static final GenericContainer<?> FANOUT_REDIS =
+            new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
+                    .withExposedPorts(6379);
+
+    static {
+        FANOUT_REDIS.start();
+    }
 
     @DynamicPropertySource
-    static void redisProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.data.redis.host", redis::getHost);
-        registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
+    static void redisOverride(DynamicPropertyRegistry registry) {
+        registry.add("spring.data.redis.host", FANOUT_REDIS::getHost);
+        registry.add("spring.data.redis.port", () -> FANOUT_REDIS.getMappedPort(6379));
         registry.add("collaboration.redis.listener.enabled", () -> "true");
     }
 
@@ -48,7 +52,7 @@ class RedisAcceptedOperationFanoutTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private CollaborationBroadcastService collaborationBroadcastService;
 
     @Autowired
@@ -86,7 +90,7 @@ class RedisAcceptedOperationFanoutTest {
     private AcceptedOperationResponse buildResponse(UUID documentId) {
         return new AcceptedOperationResponse(
                 UUID.randomUUID(), documentId, 1L,
-                DocumentOperationType.INSERT_TEXT, null,
+                DocumentOperationType.INSERT_TEXT, NullNode.instance,
                 UUID.randomUUID(), "session-1", Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS));
     }
 }
