@@ -23,9 +23,9 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     @Query("""
             SELECT d FROM Document d
             WHERE d.owner.id = :userId
-              AND (:query IS NULL OR TRIM(:query) = '' OR LOWER(d.title) LIKE LOWER(CONCAT('%', :query, '%')))
+              AND (:likeQuery IS NULL OR LOWER(d.title) LIKE :likeQuery)
             """)
-    Page<Document> findOwnedByUserId(@Param("userId") UUID userId, @Param("query") String query, Pageable pageable);
+    Page<Document> findOwnedByUserId(@Param("userId") UUID userId, @Param("likeQuery") String likeQuery, Pageable pageable);
 
     @Query("""
             SELECT d FROM Document d
@@ -35,16 +35,16 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                   AND dc.user.id = :userId
             )
               AND d.owner.id <> :userId
-              AND (:query IS NULL OR TRIM(:query) = '' OR LOWER(d.title) LIKE LOWER(CONCAT('%', :query, '%')))
+              AND (:likeQuery IS NULL OR LOWER(d.title) LIKE :likeQuery)
             """)
-    Page<Document> findSharedWithUserId(@Param("userId") UUID userId, @Param("query") String query, Pageable pageable);
+    Page<Document> findSharedWithUserId(@Param("userId") UUID userId, @Param("likeQuery") String likeQuery, Pageable pageable);
 
     @Query("""
             SELECT d FROM Document d
             WHERE d.visibility = com.mwang.backend.domain.DocumentVisibility.PUBLIC
-              AND (:query IS NULL OR TRIM(:query) = '' OR LOWER(d.title) LIKE LOWER(CONCAT('%', :query, '%')))
+              AND (:likeQuery IS NULL OR LOWER(d.title) LIKE :likeQuery)
             """)
-    Page<Document> findPublicDocuments(@Param("query") String query, Pageable pageable);
+    Page<Document> findPublicDocuments(@Param("likeQuery") String likeQuery, Pageable pageable);
 
     @Query("""
             SELECT DISTINCT d FROM Document d
@@ -52,9 +52,9 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
             WHERE (d.owner.id = :userId
                 OR dc.user.id = :userId
                 OR d.visibility = com.mwang.backend.domain.DocumentVisibility.PUBLIC)
-              AND (:query IS NULL OR TRIM(:query) = '' OR LOWER(d.title) LIKE LOWER(CONCAT('%', :query, '%')))
+              AND (:likeQuery IS NULL OR LOWER(d.title) LIKE :likeQuery)
             """)
-    Page<Document> findAccessibleByUserId(@Param("userId") UUID userId, @Param("query") String query, Pageable pageable);
+    Page<Document> findAccessibleByUserId(@Param("userId") UUID userId, @Param("likeQuery") String likeQuery, Pageable pageable);
 
     @EntityGraph(attributePaths = {"owner", "collaborators", "collaborators.user"})
     @Query("SELECT DISTINCT d FROM Document d LEFT JOIN d.collaborators dc LEFT JOIN dc.user WHERE d.id = :id")
@@ -73,7 +73,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     @Query("SELECT d FROM Document d WHERE d.id = :id")
     Optional<Document> findByIdWithPessimisticLock(@Param("id") UUID id);
 
-    @Modifying
+    @Modifying(flushAutomatically = true)
     @Query("""
             UPDATE Document d
             SET d.currentVersion = :nextVersion, d.content = :content,
