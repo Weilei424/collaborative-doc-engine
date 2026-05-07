@@ -103,7 +103,7 @@ class DocumentServiceImplTest {
         PageRequest pageable = PageRequest.of(0, 20);
 
         when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(actor);
-        when(documentRepository.findOwnedByUserId(actor.getId(), "Doc", pageable))
+        when(documentRepository.findOwnedByUserId(actor.getId(), "%doc%", pageable))
                 .thenReturn(new PageImpl<>(List.of(owned), pageable, 1));
         when(documentRepository.findAllDetailedByIdIn(List.of(owned.getId()))).thenReturn(List.of(owned));
         when(documentAuthorizationService.resolveEffectivePermission(owned, actor)).thenReturn("OWNER");
@@ -146,7 +146,7 @@ class DocumentServiceImplTest {
         PageRequest pageable = PageRequest.of(0, 20);
 
         when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(actor);
-        when(documentRepository.findPublicDocuments("pub", pageable))
+        when(documentRepository.findPublicDocuments("%pub%", pageable))
                 .thenReturn(new PageImpl<>(List.of(publicDocument), pageable, 1));
         when(documentRepository.findAllDetailedByIdIn(List.of(publicDocument.getId()))).thenReturn(List.of(publicDocument));
         when(documentAuthorizationService.resolveEffectivePermission(publicDocument, actor)).thenReturn("READ");
