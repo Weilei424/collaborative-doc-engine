@@ -38,7 +38,7 @@ public class DocumentServiceImpl implements DocumentService {
     public DocumentResponse create(CreateDocumentRequest request, HttpServletRequest httpRequest) {
         User actor = currentUserProvider.requireCurrentUser(httpRequest);
         String content = (request.content() == null || request.content().isBlank())
-                ? "{\"children\":[]}"
+                ? "{\"children\":[{\"type\":\"paragraph\",\"text\":\"\",\"children\":[]}]}"
                 : request.content();
         Document saved = documentRepository.save(Document.builder()
                 .title(request.title())
@@ -52,11 +52,12 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     public DocumentPagedList list(DocumentListScope scope, String query, Pageable pageable, HttpServletRequest httpRequest) {
         User actor = currentUserProvider.requireCurrentUser(httpRequest);
+        String likeQuery = buildLikePattern(query);
         Page<Document> page = switch (scope) {
-            case OWNED -> documentRepository.findOwnedByUserId(actor.getId(), normalizeQuery(query), pageable);
-            case SHARED -> documentRepository.findSharedWithUserId(actor.getId(), normalizeQuery(query), pageable);
-            case ACCESSIBLE -> documentRepository.findAccessibleByUserId(actor.getId(), normalizeQuery(query), pageable);
-            case PUBLIC -> documentRepository.findPublicDocuments(normalizeQuery(query), pageable);
+            case OWNED -> documentRepository.findOwnedByUserId(actor.getId(), likeQuery, pageable);
+            case SHARED -> documentRepository.findSharedWithUserId(actor.getId(), likeQuery, pageable);
+            case ACCESSIBLE -> documentRepository.findAccessibleByUserId(actor.getId(), likeQuery, pageable);
+            case PUBLIC -> documentRepository.findPublicDocuments(likeQuery, pageable);
         };
 
         List<DocumentResponse> items = mapPage(page.getContent(), actor);
@@ -102,11 +103,11 @@ public class DocumentServiceImpl implements DocumentService {
         return visibility == null ? DocumentVisibility.PRIVATE : visibility;
     }
 
-    private String normalizeQuery(String query) {
+    private String buildLikePattern(String query) {
         if (query == null || query.isBlank()) {
             return null;
         }
-        return query.trim();
+        return "%" + query.trim().toLowerCase() + "%";
     }
 
     private List<DocumentResponse> mapPage(List<Document> documents, User actor) {
