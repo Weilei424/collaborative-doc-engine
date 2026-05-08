@@ -143,17 +143,14 @@ public class DocumentOperationBatcher {
         if (!queue.isEmpty() && flag != null && flag.compareAndSet(false, true)) {
             scheduler.schedule(() -> drain(documentId), windowMs, TimeUnit.MILLISECONDS);
         } else {
-            // Queue appears empty — attempt to clean up map entries. The compute lambda uses
-            // reference equality so it only removes the entry if no concurrent enqueue replaced
-            // the queue instance. drainScheduled is removed only when the queue was actually removed.
-            final boolean[] removed = {false};
-            queues.compute(documentId, (k, q) -> {
-                if (q == queue && q.isEmpty()) { removed[0] = true; return null; }
-                return q;
-            });
-            if (removed[0] && flag != null) {
-                drainScheduled.remove(documentId, flag);
-            }
+            // Queue appears empty — clean up the queue entry. The compute lambda uses reference
+            // equality to avoid removing a queue that a concurrent enqueue already populated.
+            // drainScheduled is intentionally kept: removing it creates a race where a concurrent
+            // enqueue can schedule a drain using the old flag, the flag is then removed, and that
+            // drain runs with flag == null and cannot schedule follow-up drains if the queue is
+            // still non-empty after a maxBatchSize-bounded drain. The AtomicBoolean is ~16 bytes
+            // per document and is safe to retain for the instance lifetime.
+            queues.compute(documentId, (k, q) -> (q == queue && q.isEmpty()) ? null : q);
         }
     }
 
