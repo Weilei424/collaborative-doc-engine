@@ -38,7 +38,6 @@ import static org.mockito.Mockito.when;
         "collaboration.outbox.max-attempts=20",
         "spring.kafka.producer.properties.delivery.timeout.ms=3000"
 })
-@org.junit.jupiter.api.Disabled("Needs adaptation for async batcher model")
 class OutboxChaosTest extends AbstractIntegrationTest {
 
     @MockitoBean
@@ -58,7 +57,7 @@ class OutboxChaosTest extends AbstractIntegrationTest {
                 .build());
         Document doc = documentRepo.save(Document.builder()
                 .title("Chaos Doc")
-                .content("{\"blocks\":[]}")
+                .content("{\"children\":[{\"type\":\"paragraph\",\"text\":\"\",\"children\":[]}]}")
                 .owner(user)
                 .build());
 
