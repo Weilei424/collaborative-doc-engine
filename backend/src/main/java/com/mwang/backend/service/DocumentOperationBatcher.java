@@ -211,7 +211,7 @@ public class DocumentOperationBatcher {
                 continue;
             }
 
-            if (document.getCurrentVersion() - req.baseVersion() > staleCap) {
+            if (serverVersion - req.baseVersion() > staleCap) {
                 staleOps.add(pending);
                 continue;
             }
@@ -275,7 +275,7 @@ public class DocumentOperationBatcher {
 
         for (PendingOperation stale : staleOps) {
             meterRegistry.counter("operations.resync_required").increment();
-            deliverError(stale, documentId, "RESYNC_REQUIRED", document.getCurrentVersion());
+            deliverError(stale, documentId, "RESYNC_REQUIRED", serverVersion);
         }
     }
 
