@@ -146,7 +146,19 @@ public class DocumentOperationBatcher {
             } catch (CasMissException e) {
                 meterRegistry.counter("operations.retries", "attempt", String.valueOf(attempt)).increment();
                 if (attempt == maxCasRetries) {
-                    deliverConflictToAll(documentId, batch);
+                    long finalVersion = documentRepository.findDetailedById(documentId)
+                            .map(Document::getCurrentVersion).orElse(Long.MAX_VALUE);
+                    List<PendingOperation> staleInBatch = batch.stream()
+                            .filter(op -> finalVersion - op.request().baseVersion() > staleCap)
+                            .toList();
+                    List<PendingOperation> conflictInBatch = batch.stream()
+                            .filter(op -> finalVersion - op.request().baseVersion() <= staleCap)
+                            .toList();
+                    for (PendingOperation stale : staleInBatch) {
+                        meterRegistry.counter("operations.resync_required").increment();
+                        deliverError(stale, documentId, "RESYNC_REQUIRED", finalVersion);
+                    }
+                    deliverConflictToAll(documentId, conflictInBatch);
                 }
             } catch (Exception e) {
                 log.error("Unexpected error processing batch for document {}", documentId, e);
@@ -280,6 +292,9 @@ public class DocumentOperationBatcher {
     }
 
     private void deliverError(PendingOperation op, UUID documentId, String errorType, Long serverVersion) {
+        if ("OPERATION_CONFLICT".equals(errorType)) {
+            meterRegistry.counter("operations.conflicted").increment();
+        }
         messagingTemplate.convertAndSendToUser(
                 op.principalName(), "/queue/errors." + documentId,
                 new OperationErrorResponse(errorType, op.request().operationId(), serverVersion));
