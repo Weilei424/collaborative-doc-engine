@@ -18,7 +18,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import com.mwang.backend.repositories.DocumentOperationRepository;
 import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.listener.PatternTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
@@ -32,7 +31,6 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import static org.awaitility.Awaitility.await;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -68,9 +66,6 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
     DocumentRepository documentRepo;
 
     @Autowired
-    DocumentOperationRepository operationRepo;
-
-    @Autowired
     ObjectMapper objectMapper;
 
     @Autowired
@@ -97,6 +92,16 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
 
         JsonNode payload = objectMapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"x\"}");
 
+        String opsChannel = RedisCollaborationChannels.documentOperations(doc.getId());
+
+        // Register a drain latch before Phase 1 submits to confirm all 3 Phase 1 Redis publishes
+        // are received before the recovery latch is registered. Awaiting DB commit alone is not
+        // sufficient because the batcher publishes to Redis after the DB commit, leaving a window
+        // where a delayed Phase 1 publish could satisfy the recovery latch and hide a rebind failure.
+        CountDownLatch phase1Latch = new CountDownLatch(3);
+        MessageListener drainListener = (msg, pattern) -> phase1Latch.countDown();
+        listenerContainer.addMessageListener(drainListener, new PatternTopic(opsChannel));
+
         // Phase 1 — submit with Redis up (batcher handles publishing internally)
         for (int i = 0; i < 3; i++) {
             operationService.submitOperation(doc.getId(),
@@ -104,16 +109,13 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
                     accessor);
         }
 
-        // Wait for Phase 1 to drain to DB before registering the subscriber. This ensures the
-        // subscriber cannot be satisfied by Phase 1's Redis publishes (which happened before the
-        // subscriber existed), so the latch proves recovery after reconnect, not pre-outage delivery.
-        await().atMost(10, TimeUnit.SECONDS).until(() ->
-                operationRepo.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
-                        doc.getId(), 0L).size() >= 3);
+        assertThat(phase1Latch.await(10, TimeUnit.SECONDS))
+                .as("Phase 1 ops must be published to Redis before the outage")
+                .isTrue();
+        listenerContainer.removeMessageListener(drainListener);
 
-        // Register subscriber after Phase 1 is committed but before the outage, so we prove
-        // pre-existing subscriptions are rebound after Redis restarts.
-        String opsChannel = RedisCollaborationChannels.documentOperations(doc.getId());
+        // Register the recovery latch only after Phase 1 publishes are confirmed received.
+        // Only post-reconnect publishes can now satisfy it, proving pre-existing subscriptions rebind.
         CountDownLatch subscriberLatch = new CountDownLatch(1);
         MessageListener testListener = (msg, pattern) -> subscriberLatch.countDown();
         listenerContainer.addMessageListener(testListener, new PatternTopic(opsChannel));
