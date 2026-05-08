@@ -47,7 +47,6 @@ import static org.mockito.Mockito.when;
         "collaboration.redis.listener.recovery-interval-ms=500",
         "collaboration.redis.listener.enabled=true"
 })
-@org.junit.jupiter.api.Disabled("Needs adaptation for async batcher model")
 class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
 
     @MockitoBean
@@ -82,7 +81,7 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
                 .build());
         Document doc = documentRepo.save(Document.builder()
                 .title("Redis Chaos Doc")
-                .content("{\"blocks\":[]}")
+                .content("{\"children\":[{\"type\":\"paragraph\",\"text\":\"\",\"children\":[]}]}")
                 .owner(user)
                 .build());
 
