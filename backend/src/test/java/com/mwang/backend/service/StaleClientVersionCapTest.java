@@ -24,6 +24,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -92,7 +93,9 @@ class StaleClientVersionCapTest extends AbstractIntegrationTest {
                         eq("stale-test-principal"),
                         eq("/queue/errors." + document.getId()),
                         argThat((OperationErrorResponse r) ->
-                                "RESYNC_REQUIRED".equals(r.error()) && opId.equals(r.operationId()))));
+                                "RESYNC_REQUIRED".equals(r.error())
+                                && opId.equals(r.operationId())
+                                && Long.valueOf(201L).equals(r.currentServerVersion()))));
     }
 
     @Test
@@ -101,10 +104,19 @@ class StaleClientVersionCapTest extends AbstractIntegrationTest {
         JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         UUID opId = UUID.randomUUID();
 
-        // submitOperation is void/async; no synchronous throw expected
         operationService.submitOperation(
                 document.getId(),
                 new SubmitOperationRequest(opId, 1L, DocumentOperationType.INSERT_TEXT, payload),
                 mock(SimpMessageHeaderAccessor.class));
+
+        // Assert the op was actually committed — a > vs >= regression would deliver RESYNC_REQUIRED
+        // and leave the document at version 201, so waiting for a committed op at version > 200 proves
+        // the boundary condition was not rejected.
+        await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
+            var ops = operationRepository.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
+                    document.getId(), 200L);
+            assertThat(ops).hasSize(1);
+            assertThat(ops.get(0).getOperationId()).isEqualTo(opId);
+        });
     }
 }
