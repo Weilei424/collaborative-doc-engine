@@ -137,12 +137,12 @@ Each accepted operation is broadcast to all connected users via Redis pub/sub an
 
 ## System Limits (V2)
 
-| Aspect                              | V2 Observed Limit                            |
-|-------------------------------------|----------------------------------------------|
-| Contention p95 (accepted ops)       | 14 ms at 100 VUs (batcher serialises all)    |
-| CAS retry rate at 100-VU contention | 0% (batcher eliminates concurrent attempts)  |
-| Independent-doc throughput          | ~188 ops/sec                                 |
-| Hard failure threshold              | Not reached (0% errors at 100 VUs)           |
+| Aspect                          | Limit |
+|---------------------------------|-------|
+| Max throughput (single doc)     | ~188 ops/sec (independent benchmark; contention throughput unmeasurable — k6 static baseVersion limits accepted ops to ~1/s) |
+| Comfortable concurrency         | >100 users (contention p50 = 12 ms at 100 VUs — lock queue eliminated by batcher) |
+| Latency > 1s (median)           | Not observed at 100 VUs (contention p50 = 12 ms; independent p50 = 113 ms) |
+| Failure threshold               | Not reached (0% errors at 100 VUs) |
 
 ---
 
