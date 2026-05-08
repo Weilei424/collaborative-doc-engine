@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import com.mwang.backend.repositories.DocumentOperationRepository;
 import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.listener.PatternTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
@@ -30,6 +31,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+
+import static org.awaitility.Awaitility.await;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -65,6 +68,9 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
     DocumentRepository documentRepo;
 
     @Autowired
+    DocumentOperationRepository operationRepo;
+
+    @Autowired
     ObjectMapper objectMapper;
 
     @Autowired
@@ -98,7 +104,15 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
                     accessor);
         }
 
-        // Register subscriber before the outage so we prove pre-existing subscriptions are rebound
+        // Wait for Phase 1 to drain to DB before registering the subscriber. This ensures the
+        // subscriber cannot be satisfied by Phase 1's Redis publishes (which happened before the
+        // subscriber existed), so the latch proves recovery after reconnect, not pre-outage delivery.
+        await().atMost(10, TimeUnit.SECONDS).until(() ->
+                operationRepo.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
+                        doc.getId(), 0L).size() >= 3);
+
+        // Register subscriber after Phase 1 is committed but before the outage, so we prove
+        // pre-existing subscriptions are rebound after Redis restarts.
         String opsChannel = RedisCollaborationChannels.documentOperations(doc.getId());
         CountDownLatch subscriberLatch = new CountDownLatch(1);
         MessageListener testListener = (msg, pattern) -> subscriberLatch.countDown();
