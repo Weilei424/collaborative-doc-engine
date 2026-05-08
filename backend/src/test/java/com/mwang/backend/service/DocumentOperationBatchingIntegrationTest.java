@@ -75,8 +75,8 @@ class DocumentOperationBatchingIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void fiveSubmitters_allOpsAccepted_retriesNearZero() throws Exception {
-        int submitters = 5;
+    void twentySubmitters_allOpsAccepted_retriesNearZero() throws Exception {
+        int submitters = 20;
         int opsPerSubmitter = 10;
         int totalOps = submitters * opsPerSubmitter;
 
@@ -138,8 +138,8 @@ class DocumentOperationBatchingIntegrationTest extends AbstractIntegrationTest {
         double highRetries = retriesAttempt3 + retriesAttempt4 + retriesAttempt5;
         assertThat(highRetries).isLessThan(totalOps * 0.10);
 
-        // operations.batch.size was recorded (batching actually happened)
+        // operations.batch.size mean > 1 confirms batching actually happened under contention
         assertThat(meterRegistry.find("operations.batch.size").summary()).isNotNull();
-        assertThat(meterRegistry.find("operations.batch.size").summary().count()).isGreaterThan(0);
+        assertThat(meterRegistry.find("operations.batch.size").summary().mean()).isGreaterThan(1.0);
     }
 }
