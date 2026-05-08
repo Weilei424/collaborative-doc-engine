@@ -111,7 +111,14 @@ public class DocumentOperationBatcher {
 
     public void enqueue(PendingOperation op) {
         UUID docId = op.documentId();
-        queues.computeIfAbsent(docId, id -> new LinkedBlockingQueue<>()).offer(op);
+        // Use compute so that the offer is atomic with respect to the drain cleanup's compute.
+        // computeIfAbsent + offer is not atomic: drain can remove the empty queue between the
+        // two calls, causing the op to be offered into an unreferenced queue and then lost.
+        queues.compute(docId, (k, q) -> {
+            LinkedBlockingQueue<PendingOperation> queue = (q != null) ? q : new LinkedBlockingQueue<>();
+            queue.offer(op);
+            return queue;
+        });
         AtomicBoolean flag = drainScheduled.computeIfAbsent(docId, id -> new AtomicBoolean(false));
         if (flag.compareAndSet(false, true)) {
             scheduler.schedule(() -> drain(docId), windowMs, TimeUnit.MILLISECONDS);
