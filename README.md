@@ -210,13 +210,16 @@ Benchmarked using k6 at 100 VUs with the same ramp shape as the V1 baseline.
 
 ### V1 → V2 Comparison
 
-| Metric                       | V1       | V2        | Change    |
-|------------------------------|----------|-----------|-----------|
-| Contention p95 (accepted)    | 3.05 s   | 14 ms     | **−99.5%** |
-| Contention median            | 484 ms   | 12 ms     | **−97.5%** |
-| CAS / lock retries           | N/A      | 0         | eliminated |
-| Independent p95              | 11 ms    | 205 ms    | +18×¹     |
-| Hard failure rate            | 0%       | 0%        | unchanged  |
+| Metric                       | V1              | V2                          | Change       |
+|------------------------------|-----------------|-----------------------------|--------------|
+| Contention p95 (accepted)    | 3.05 s          | 14 ms                       | **−99.5%**   |
+| Contention median            | 484 ms          | 12 ms                       | **−97.5%**   |
+| CAS / lock retries           | N/A             | 0                           | eliminated   |
+| Independent p95              | 11 ms           | 205 ms                      | +18×¹        |
+| Max throughput (single doc)  | ~44 ops/sec     | ~188 ops/sec                | **+4.3×**    |
+| Comfortable concurrency      | ~30–40 users    | >100 users                  | **+2.5–3×**  |
+| Latency > 1s (median)        | ~50–60 users    | Not observed at 100 VUs     | eliminated   |
+| Hard failure rate            | 0%              | 0%                          | unchanged    |
 
 ¹ The independent-doc regression is caused by the P21 batcher's 5 ms window adding overhead even on uncontested documents. For shared-document workloads the window cost is amortised across multiple ops per drain.
 
