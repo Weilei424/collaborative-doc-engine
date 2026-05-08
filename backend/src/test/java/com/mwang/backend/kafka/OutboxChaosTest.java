@@ -97,7 +97,8 @@ class OutboxChaosTest extends AbstractIntegrationTest {
             // Wait for batcher to drain all 10 ops to DB
             await().atMost(Duration.ofSeconds(10)).until(() ->
                     operationRepo.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(doc.getId(), 0L).size() >= 10);
-            operationRepo.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(doc.getId(), 4L)
+            // Phase 1 committed server versions 1..5; query > 5L to capture only Phase 2 ops (6..10)
+            operationRepo.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(doc.getId(), 5L)
                     .forEach(op -> pausedWindowVersions.add(op.getServerVersion()));
 
             // Wait a moment — poller should be attempting and failing
