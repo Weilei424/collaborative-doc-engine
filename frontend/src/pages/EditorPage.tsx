@@ -27,6 +27,7 @@ export function EditorPage() {
   const submitOpRef = useRef<(req: SubmitOperationRequest) => void>(() => {})
   const onOperationRef = useRef<(op: AcceptedOperationResponse) => void>(() => {})
   const onAccessRevokedRef = useRef<() => void>(() => {})
+  const onErrorRef = useRef<(payload: OperationErrorPayload) => void>(() => {})
   const hasMounted = useRef(false)
 
   const token = user?.token ?? null
@@ -87,14 +88,8 @@ export function EditorPage() {
   })
 
   const stableOnError = useCallback(
-    (payload: OperationErrorPayload) => {
-      if (payload.error === 'RESYNC_REQUIRED') {
-        handleResyncRequired(payload.operationId, payload.currentServerVersion)
-      } else if (payload.error === 'OPERATION_CONFLICT') {
-        handleConflict(payload.operationId)
-      }
-    },
-    [handleResyncRequired, handleConflict],
+    (payload: OperationErrorPayload) => onErrorRef.current(payload),
+    [],
   )
 
   const { connected, submitOperation } = useCollaboration({
@@ -124,6 +119,16 @@ export function EditorPage() {
       editor?.setEditable(false)
     }
   }, [editor])
+
+  useEffect(() => {
+    onErrorRef.current = (payload: OperationErrorPayload) => {
+      if (payload.error === 'RESYNC_REQUIRED') {
+        handleResyncRequired(payload.operationId, payload.currentServerVersion)
+      } else if (payload.error === 'OPERATION_CONFLICT') {
+        handleConflict(payload.operationId)
+      }
+    }
+  }, [handleResyncRequired, handleConflict])
 
   // Wire Tiptap transaction events to the operation bridge
   useEffect(() => {
