@@ -203,3 +203,37 @@
 
 - **`submit.total` p95 improvement**: **gate passed.** p95 dropped from 3.15s → 2.21s (−30%) vs. the post-P18 contention baseline. The `lockAcquisition` timer (post-P18 p95 = 285ms, stacking to ~3s at 100 VUs) is entirely absent from the P19 hot path. Accepted-op k6 latency is 51ms p95 — a ~98.5% reduction from the 3360ms post-P18 figure when measured on accepted ops.
 - **`operations.retries{attempt>3}` threshold**: **within expected bounds.** Under 100-VU single-document contention with `max-attempts=5`, at most 5 ops succeed per CAS cycle, so ~95% OPERATION_CONFLICT is correct behaviour. 38.7% of submitted ops reached attempt 4+ (geometric decay: 8540→6856→5699→4804→3987), confirming the retry loop is bounded and not looping uncontrollably. No threshold was set for this metric in the DoD because a meaningful bound requires knowing the VU count and `max-attempts`; the adversarial integration test (`DocumentOperationAdversarialTest`) covers correctness under exhaustion.
+
+---
+
+## Post-P21 Results (from `load-test/benchmark-contention.js`)
+
+> **Not yet captured.** Run `k6 run load-test/benchmark-contention.js` against a compose stack with the P21 batcher active, then scrape `/actuator/prometheus` at the end of the run. DoD gate: `submit.total` p95 at 100 concurrent submitters drops further vs. post-P19; `operations.retries{attempt>2}` rate drops below 10% of submitted ops.
+
+### Post-P21 k6 End-to-End Operation Latency
+
+| Metric | Value |
+|---|---|
+| avg | — |
+| min | — |
+| med (p50) | — |
+| p90 | — |
+| p95 | — (target: < post-P19 value of 51.1ms) |
+| max | — |
+| operations_accepted | — |
+
+### Post-P21 Counter Snapshot
+
+| Counter | Source | Value |
+|---|---|---|
+| `operations.accepted` | Micrometer | — |
+| `operations.conflicted` | Micrometer | — |
+| `operations.retries{attempt="1"}` | Micrometer | — |
+| `operations.retries{attempt="2"}` | Micrometer | — |
+| `operations.retries{attempt="3"}` | Micrometer | — |
+| `operations.batch.size` count | Micrometer | — |
+| `operations.batch.size` mean | Micrometer | — |
+
+### Post-P21 DoD Gate Assessment
+
+> Fill in after benchmark run. Key questions: (1) Does `submit.total` p95 improve vs. P19 under 100-VU contention? (2) Is `operations.retries{attempt>2}` below 10% of submitted ops? (3) Does `operations.batch.size` mean confirm batching is firing (mean > 1 under contention)?
