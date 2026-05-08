@@ -75,7 +75,7 @@ class DocumentOperationBatchingIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void twentySubmitters_allOpsAccepted_retriesNearZero() throws Exception {
+    void fiveSubmitters_allOpsAccepted_retriesNearZero() throws Exception {
         int submitters = 5;
         int opsPerSubmitter = 10;
         int totalOps = submitters * opsPerSubmitter;
