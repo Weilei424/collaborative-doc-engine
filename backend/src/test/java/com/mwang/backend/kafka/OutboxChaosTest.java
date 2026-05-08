@@ -75,6 +75,13 @@ class OutboxChaosTest extends AbstractIntegrationTest {
                     accessor);
         }
 
+        // Wait for Phase 1 to drain to DB before pausing Kafka. Without this, Phase 1 ops can end
+        // up in the same batch as Phase 2 ops, making pausedWindowVersions include pre-pause ops
+        // and the publishedToKafkaAt null assertion semantically wrong.
+        await().atMost(Duration.ofSeconds(10)).until(() ->
+                operationRepo.findByDocumentIdAndServerVersionGreaterThanOrderByServerVersionAsc(
+                        doc.getId(), 0L).size() >= 5);
+
         // Pause Kafka
         DockerClient docker = KAFKA.getDockerClient();
         docker.pauseContainerCmd(KAFKA.getContainerId()).exec();
