@@ -135,6 +135,18 @@ public class DocumentOperationBatcher {
         // If more ops arrived (or were pre-queued beyond maxBatchSize), schedule a follow-up drain.
         if (!queue.isEmpty() && flag != null && flag.compareAndSet(false, true)) {
             scheduler.schedule(() -> drain(documentId), windowMs, TimeUnit.MILLISECONDS);
+        } else {
+            // Queue appears empty — attempt to clean up map entries. The compute lambda uses
+            // reference equality so it only removes the entry if no concurrent enqueue replaced
+            // the queue instance. drainScheduled is removed only when the queue was actually removed.
+            final boolean[] removed = {false};
+            queues.compute(documentId, (k, q) -> {
+                if (q == queue && q.isEmpty()) { removed[0] = true; return null; }
+                return q;
+            });
+            if (removed[0] && flag != null) {
+                drainScheduled.remove(documentId, flag);
+            }
         }
     }
 
@@ -223,7 +235,7 @@ public class DocumentOperationBatcher {
                 continue;
             }
 
-            if (serverVersion - req.baseVersion() > staleCap) {
+            if (expectedVersion - req.baseVersion() > staleCap) {
                 staleOps.add(pending);
                 continue;
             }
