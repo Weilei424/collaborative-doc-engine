@@ -77,7 +77,7 @@ export function EditorPage() {
   )
   const stableOnAccessRevoked = useCallback(() => onAccessRevokedRef.current(), [])
 
-  const { onTransaction, onAcceptedOperation, handleResyncRequired } = useTiptapCollaboration({
+  const { onTransaction, onAcceptedOperation, handleResyncRequired, handleConflict } = useTiptapCollaboration({
     editor,
     documentId: documentId!,
     sessionId,
@@ -90,9 +90,11 @@ export function EditorPage() {
     (payload: OperationErrorPayload) => {
       if (payload.error === 'RESYNC_REQUIRED') {
         handleResyncRequired(payload.operationId, payload.currentServerVersion)
+      } else if (payload.error === 'OPERATION_CONFLICT') {
+        handleConflict(payload.operationId)
       }
     },
-    [handleResyncRequired],
+    [handleResyncRequired, handleConflict],
   )
 
   const { connected, submitOperation } = useCollaboration({
