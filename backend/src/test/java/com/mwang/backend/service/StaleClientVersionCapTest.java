@@ -9,8 +9,8 @@ import com.mwang.backend.domain.User;
 import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.repositories.UserRepository;
-import com.mwang.backend.service.exception.StaleClientException;
 import com.mwang.backend.testcontainers.AbstractIntegrationTest;
+import com.mwang.backend.web.model.OperationErrorResponse;
 import com.mwang.backend.web.model.SubmitOperationRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,21 +18,25 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest
-@org.junit.jupiter.api.Disabled("Stale-cap check moved to DocumentOperationBatcher — needs adaptation")
 class StaleClientVersionCapTest extends AbstractIntegrationTest {
 
     @MockitoBean private CurrentUserProvider currentUserProvider;
+    @MockitoBean private SimpMessagingTemplate messagingTemplate;
 
     @Autowired private DocumentOperationService operationService;
     @Autowired private DocumentRepository documentRepository;
@@ -70,21 +74,25 @@ class StaleClientVersionCapTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void submitOperation_lagExceedsCap_throwsStaleClientException() throws Exception {
-        // currentVersion=201, baseVersion=0 → lag=201 > staleCap=200 → reject
+    void submitOperation_lagExceedsCap_deliversResyncRequired() throws Exception {
+        // currentVersion=201, baseVersion=0 → lag=201 > staleCap=200 → RESYNC_REQUIRED
         JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         UUID opId = UUID.randomUUID();
 
-        assertThatThrownBy(() -> operationService.submitOperation(
+        SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+        when(accessor.getUser()).thenReturn(() -> "stale-test-principal");
+
+        operationService.submitOperation(
                 document.getId(),
                 new SubmitOperationRequest(opId, 0L, DocumentOperationType.INSERT_TEXT, payload),
-                mock(SimpMessageHeaderAccessor.class)))
-                .isInstanceOf(StaleClientException.class)
-                .satisfies(ex -> {
-                    StaleClientException sce = (StaleClientException) ex;
-                    assertThat(sce.getOperationId()).isEqualTo(opId);
-                    assertThat(sce.getCurrentServerVersion()).isEqualTo(201L);
-                });
+                accessor);
+
+        await().atMost(5, TimeUnit.SECONDS).untilAsserted(() ->
+                verify(messagingTemplate).convertAndSendToUser(
+                        eq("stale-test-principal"),
+                        eq("/queue/errors." + document.getId()),
+                        argThat((OperationErrorResponse r) ->
+                                "RESYNC_REQUIRED".equals(r.error()) && opId.equals(r.operationId()))));
     }
 
     @Test
@@ -93,7 +101,7 @@ class StaleClientVersionCapTest extends AbstractIntegrationTest {
         JsonNode payload = mapper.readTree("{\"path\":[0],\"offset\":0,\"text\":\"hi\"}");
         UUID opId = UUID.randomUUID();
 
-        // submitOperation is now void/async; stale-cap now delivers RESYNC_REQUIRED via batcher
+        // submitOperation is void/async; no synchronous throw expected
         operationService.submitOperation(
                 document.getId(),
                 new SubmitOperationRequest(opId, 1L, DocumentOperationType.INSERT_TEXT, payload),
