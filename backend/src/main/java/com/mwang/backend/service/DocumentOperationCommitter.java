@@ -96,17 +96,7 @@ public class DocumentOperationCommitter {
                     .operationType(opData.operationType())
                     .payload(payloadString(opData.payload()))
                     .build();
-            try {
-                results.add(operationRepository.saveAndFlush(op));
-            } catch (DataIntegrityViolationException e) {
-                String msg = e.getMessage() != null ? e.getMessage() : "";
-                if (msg.contains("uk_document_operations_document_operation")) {
-                    operationRepository.findByDocumentIdAndOperationId(documentId, opData.operationId())
-                            .ifPresent(results::add);
-                } else {
-                    throw e;
-                }
-            }
+            results.add(operationRepository.saveAndFlush(op));
         }
         return results;
     }
