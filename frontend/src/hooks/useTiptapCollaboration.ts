@@ -196,22 +196,27 @@ export function useTiptapCollaboration({
   const handleConflict = useCallback(
     (operationId: string) => {
       const entry = pendingOps.current.get(operationId)
-      pendingOps.current.delete(operationId)
-      if (entry && editor) {
-        isApplyingRemote.current = true
-        try {
-          const view = editor.view
-          let tr = view.state.tr
-          for (let i = entry.steps.length - 1; i >= 0; i--) {
-            const { step, beforeDoc } = entry.steps[i]
-            tr = tr.step(step.invert(beforeDoc))
-          }
-          view.dispatch(tr)
-        } catch (e) {
-          console.warn('[collab] Failed to invert conflicted op — client may diverge:', e)
-        } finally {
-          isApplyingRemote.current = false
+      if (!entry) return
+      if (!editor) {
+        pendingOps.current.delete(operationId)
+        return
+      }
+      isApplyingRemote.current = true
+      try {
+        const view = editor.view
+        let tr = view.state.tr
+        for (let i = entry.steps.length - 1; i >= 0; i--) {
+          const { step, beforeDoc } = entry.steps[i]
+          tr = tr.step(step.invert(beforeDoc))
         }
+        view.dispatch(tr)
+        pendingOps.current.delete(operationId)
+      } catch (e) {
+        console.warn('[collab] Failed to invert conflicted op — refresh to resync:', e)
+        // Entry intentionally kept: no echo will arrive, but preserving it lets the
+        // user reload to get a clean server state rather than silently diverging.
+      } finally {
+        isApplyingRemote.current = false
       }
     },
     [editor],
