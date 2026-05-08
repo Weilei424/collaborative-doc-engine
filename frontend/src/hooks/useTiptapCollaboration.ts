@@ -193,7 +193,14 @@ export function useTiptapCollaboration({
     [documentId, token, submitOperation],
   )
 
-  return { onTransaction, onAcceptedOperation, handleResyncRequired }
+  const handleConflict = useCallback(
+    (operationId: string) => {
+      pendingOps.current.delete(operationId)
+    },
+    [],
+  )
+
+  return { onTransaction, onAcceptedOperation, handleResyncRequired, handleConflict }
 }
 
 // ─── Gap Fill ────────────────────────────────────────────────────────────────
